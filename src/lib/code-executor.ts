@@ -42,6 +42,8 @@ type CodeExecutionSandboxPlan = {
   backend?: CodeExecutionSandboxBackend;
   isolationLevel: "process-restricted" | "container-no-network" | "unavailable";
   strict: boolean;
+  strongIsolationRequired: boolean;
+  policy: "development" | "production";
   dockerImage?: string;
   dockerAvailable: boolean;
   message: string;
@@ -1173,12 +1175,29 @@ async function previewOutputFile(filePath: string, name: string, size: number) {
 
 async function resolveCodeSandboxPlan(): Promise<CodeExecutionSandboxPlan> {
   const requested = requestedCodeSandbox();
+  const strongIsolationRequired = requiresStrongCodeSandbox();
+  const policy = strongIsolationRequired ? "production" : "development";
   if (requested === "process") {
+    if (strongIsolationRequired) {
+      return {
+        requested,
+        isolationLevel: "unavailable",
+        strict: true,
+        strongIsolationRequired,
+        policy,
+        dockerImage: defaultDockerImage,
+        dockerAvailable: false,
+        message:
+          "Process-level code execution is disabled in production isolation mode. Use CODE_EXECUTOR_SANDBOX=docker with a local no-network Docker image."
+      };
+    }
     return {
       requested,
       backend: "process",
       isolationLevel: "process-restricted",
       strict: false,
+      strongIsolationRequired,
+      policy,
       dockerAvailable: false,
       message: "Using process restricted Python sandbox by explicit configuration."
     };
@@ -1190,21 +1209,28 @@ async function resolveCodeSandboxPlan(): Promise<CodeExecutionSandboxPlan> {
       requested,
       backend: "docker",
       isolationLevel: "container-no-network",
-      strict: requested === "docker",
+      strict: requested === "docker" || strongIsolationRequired,
+      strongIsolationRequired,
+      policy,
       dockerImage: defaultDockerImage,
       dockerAvailable: true,
       message: `Using Docker sandbox image ${defaultDockerImage} with --network none.`
     };
   }
 
-  if (requested === "docker") {
+  if (requested === "docker" || strongIsolationRequired) {
     return {
       requested,
       isolationLevel: "unavailable",
       strict: true,
+      strongIsolationRequired,
+      policy,
       dockerImage: defaultDockerImage,
       dockerAvailable: false,
-      message: `Docker sandbox requested but unavailable: ${docker.reason}`
+      message:
+        requested === "docker"
+          ? `Docker sandbox requested but unavailable: ${docker.reason}`
+          : `Production isolation requires Docker no-network sandbox, but Docker is unavailable: ${docker.reason}`
     };
   }
 
@@ -1213,6 +1239,8 @@ async function resolveCodeSandboxPlan(): Promise<CodeExecutionSandboxPlan> {
     backend: "process",
     isolationLevel: "process-restricted",
     strict: false,
+    strongIsolationRequired,
+    policy,
     dockerImage: defaultDockerImage,
     dockerAvailable: false,
     message: `Docker sandbox unavailable, falling back to process restricted Python: ${docker.reason}`
@@ -1223,6 +1251,11 @@ function requestedCodeSandbox(): CodeExecutionSandboxRequest {
   const raw = (process.env.CODE_EXECUTOR_SANDBOX || "auto").trim().toLowerCase();
   if (raw === "docker" || raw === "process" || raw === "auto") return raw;
   return "auto";
+}
+
+function requiresStrongCodeSandbox() {
+  const forced = (process.env.CODE_EXECUTOR_REQUIRE_STRONG_SANDBOX || "").trim().toLowerCase();
+  return process.env.NODE_ENV === "production" || forced === "1" || forced === "true" || forced === "on";
 }
 
 async function probeDockerSandbox(image: string): Promise<{ available: boolean; reason: string }> {
@@ -1269,7 +1302,7 @@ function sandboxPlanGuardrail(plan: CodeExecutionSandboxPlan): AgentToolGuardrai
       "code-sandbox-backend",
       "Sandbox backend",
       "pass",
-      `${plan.message} CPU/memory/pids/fs limits and system-level network isolation enabled.`
+      `${plan.message} CPU/memory/pids/fs limits and system-level network isolation enabled. policy=${plan.policy}.`
     );
   }
   return guard(
