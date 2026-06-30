@@ -55,6 +55,15 @@ type RuntimeReplayPlan =
       limitations: string[];
     };
 
+type LocalRefreshPlan = {
+  strategy: NonNullable<AgentRuntimeResumeImpact["localRefreshStrategy"]>;
+  recomputed: AgentRuntimeResumeImpact["recomputed"];
+  downstreamTaskNodeIds: string[];
+  staleTaskNodeIds: string[];
+  summary: string;
+  limitations: string[];
+};
+
 export function createRuntimeResumeRequest(
   record: AnalysisRecord,
   input: RuntimeResumeInput
@@ -223,29 +232,20 @@ async function tryReplayDurableWorker(
       : record;
   const refreshed = downstreamRecord !== record;
   const recomputed = replay.output ? recomputedForReplayOutputs([replay.output], record) : [];
-  const codeEvidenceRefreshed = recomputed.includes("evidence_brief");
   const replayedRequest: AgentRuntimeResumeRequest = {
     ...request,
     status,
     executionMode: "auto_replay",
     updatedAt: new Date().toISOString(),
     artifactIds: [...new Set([...request.artifactIds, ...(replay.record.artifactIds ?? [])])],
-    resultSummary: refreshed
-      ? replay.output?.kind === "code_execute"
-        ? codeEvidenceRefreshed
-          ? `${replay.summary} 已更新代码执行 trace、artifact 和实验 Evidence Brief。`
-          : `${replay.summary} 已更新代码执行 trace 和 artifact。`
-        : `${replay.summary} 已合并新增证据，并刷新 Evidence Brief、Judge、Report 和质量审计。`
+    resultSummary: refreshed && replay.output
+      ? `${replay.summary} ${localRefreshPlanForReplayOutputs([replay.output], record).summary}`
       : replay.summary,
     limitations: [
-      refreshed
-        ? replay.output?.kind === "code_execute"
-          ? codeEvidenceRefreshed
-            ? "已执行 durable code replay，并把结果重新映射为实验计算证据刷新 Evidence Brief；未自动改写报告正文。"
-            : "已执行 durable code replay；本次只更新代码执行轨迹与 artifact，因为当前分析还没有可更新的实验结果。"
-          : "已执行 durable worker replay，并刷新下游证据账本和报告。"
+      refreshed && replay.output
+        ? localRefreshPlanForReplayOutputs([replay.output], record).limitations.join(" ")
         : "已执行 durable worker replay；本次没有可合并的结构化输出。",
-      "当前刷新粒度仍是以分析记录为单位重算 Evidence Brief/Judge/Report，后续会进一步缩小到 task graph 局部节点。",
+      "local refresh v2 会优先刷新 replay 对应 artifact/task node；未重算的下游节点会标记为 stale。",
       replay.artifactRef ? `输出 artifact: ${replay.artifactRef}` : ""
     ].filter(Boolean),
     impact: buildResumeImpact({
@@ -257,9 +257,14 @@ async function tryReplayDurableWorker(
       durableQueueRecordIds: [replay.record.id],
       artifactIds: [...new Set([...(request.artifactIds ?? []), ...(replay.record.artifactIds ?? [])])],
       recomputed: refreshed ? recomputed : [],
+      staleTaskNodeIds: replay.output ? localRefreshPlanForReplayOutputs([replay.output], record).staleTaskNodeIds : [],
+      downstreamTaskNodeIds: replay.output ? localRefreshPlanForReplayOutputs([replay.output], record).downstreamTaskNodeIds : undefined,
+      localRefreshStrategy: replay.output ? localRefreshPlanForReplayOutputs([replay.output], record).strategy : undefined,
       notes: [
         replay.summary,
-        refreshed ? "downstream refreshed at analysis-record granularity" : "no structured replay output merged"
+        refreshed && replay.output
+          ? `local refresh strategy: ${localRefreshPlanForReplayOutputs([replay.output], record).strategy}`
+          : "no structured replay output merged"
       ]
     })
   };
@@ -301,7 +306,6 @@ async function tryReplayDurableTaskNode(
     : record;
   const refreshed = downstreamRecord !== record;
   const recomputed = recomputedForReplayOutputs(outputs, record);
-  const codeEvidenceRefreshed = recomputed.includes("evidence_brief");
   const status = statusForDurableTaskReplay(replays);
   const artifactIds = [
     ...request.artifactIds,
@@ -318,23 +322,15 @@ async function tryReplayDurableTaskNode(
     updatedAt: new Date().toISOString(),
     artifactIds: [...new Set(artifactIds)],
     resultSummary: refreshed
-      ? outputs.some((output) => output.kind === "web_search" || output.kind === "web_fetch")
-        ? `已重放 task ${taskNodeId} 下 ${replays.length} 个 durable worker：applied ${appliedCount}，skipped ${skippedCount}，blocked ${blockedCount}，unsupported ${unsupportedCount}；已刷新 Evidence Brief、Judge、Report 和质量审计。`
-        : codeEvidenceRefreshed
-          ? `已重放 task ${taskNodeId} 下 ${replays.length} 个 durable worker：applied ${appliedCount}，skipped ${skippedCount}，blocked ${blockedCount}，unsupported ${unsupportedCount}；已更新代码执行 trace、artifact 和实验 Evidence Brief。`
-          : `已重放 task ${taskNodeId} 下 ${replays.length} 个 durable worker：applied ${appliedCount}，skipped ${skippedCount}，blocked ${blockedCount}，unsupported ${unsupportedCount}；已更新代码执行 trace 和 artifact。`
+      ? `已重放 task ${taskNodeId} 下 ${replays.length} 个 durable worker：applied ${appliedCount}，skipped ${skippedCount}，blocked ${blockedCount}，unsupported ${unsupportedCount}；${localRefreshPlanForReplayOutputs(outputs, record).summary}`
       : `已处理 task ${taskNodeId} 下 ${replays.length} 个 durable worker：applied ${appliedCount}，skipped ${skippedCount}，blocked ${blockedCount}，unsupported ${unsupportedCount}。`,
     limitations: [
       outputs.length
-        ? outputs.some((output) => output.kind === "web_search" || output.kind === "web_fetch")
-          ? "已按 task node 批量 replay durable search/fetch worker，并以分析记录粒度刷新下游证据账本和报告。"
-          : codeEvidenceRefreshed
-            ? "已按 task node replay durable code worker，并把结果重新映射为实验计算证据刷新 Evidence Brief；未自动改写报告正文。"
-            : "已按 task node replay durable code worker；本次只更新代码执行轨迹与 artifact，因为当前分析还没有可更新的实验结果。"
+        ? localRefreshPlanForReplayOutputs(outputs, record).limitations.join(" ")
         : "本次 task node replay 没有产生可合并的结构化输出。",
       blockedCount ? `${blockedCount} 个 worker replay blocked，需要查看 durable queue record。` : "",
       unsupportedCount ? `${unsupportedCount} 个 worker 暂不支持 durable replay。` : "",
-      "下一段继续把刷新粒度缩小到 task graph 局部节点。"
+      "local refresh v2 会优先刷新 replay 对应 artifact/task node，并把未重算下游标记为 stale。"
     ].filter(Boolean),
     impact: buildResumeImpact({
       request,
@@ -345,9 +341,13 @@ async function tryReplayDurableTaskNode(
       durableQueueRecordIds: replays.map((replay) => replay.record.id),
       artifactIds: [...new Set(artifactIds)],
       recomputed: outputs.length ? recomputed : [],
+      staleTaskNodeIds: outputs.length ? localRefreshPlanForReplayOutputs(outputs, record).staleTaskNodeIds : [],
+      downstreamTaskNodeIds: outputs.length ? localRefreshPlanForReplayOutputs(outputs, record).downstreamTaskNodeIds : undefined,
+      localRefreshStrategy: outputs.length ? localRefreshPlanForReplayOutputs(outputs, record).strategy : undefined,
       notes: [
         `durable workers replayed: ${replays.length}`,
-        `applied=${appliedCount}, skipped=${skippedCount}, blocked=${blockedCount}, unsupported=${unsupportedCount}`
+        `applied=${appliedCount}, skipped=${skippedCount}, blocked=${blockedCount}, unsupported=${unsupportedCount}`,
+        outputs.length ? `local refresh strategy: ${localRefreshPlanForReplayOutputs(outputs, record).strategy}` : ""
       ]
     })
   };
@@ -363,6 +363,7 @@ async function refreshRecordAfterDurableReplays(
   outputs: DurableWorkerReplayOutput[]
 ): Promise<AnalysisRecord> {
   if (!record.webResearch) return record;
+  const refreshPlan = localRefreshPlanForReplayOutputs(outputs, record);
   const webResearch = outputs.reduce(
     (current, output) => mergeReplayOutputIntoWebResearch(current, output),
     record.webResearch
@@ -380,20 +381,31 @@ async function refreshRecordAfterDurableReplays(
   );
   const hasEvidenceExtractOutput = outputs.some((output) => output.kind === "evidence_extract");
   const hasJudgeOutput = outputs.some((output) => output.kind === "judge");
+  const judgeOutputs = outputs.filter(
+    (output): output is Extract<DurableWorkerReplayOutput, { kind: "judge" }> =>
+      output.kind === "judge"
+  );
   let nextRecord: AnalysisRecord = {
     ...record,
     updatedAt: new Date().toISOString(),
     webResearch
   };
-  if (hasWebEvidenceOutput || hasEvidenceExtractOutput || hasJudgeOutput) {
+  if (hasWebEvidenceOutput && refreshPlan.strategy === "artifact_only") {
+    nextRecord = {
+      ...nextRecord,
+      webResearch: markReplayStaleTaskNodes(webResearch, refreshPlan)
+    };
+  } else if (hasEvidenceExtractOutput) {
     nextRecord = await refreshRecordWithWebResearch(
       nextRecord,
       webResearch,
-      hasJudgeOutput
-        ? "Judge Durable Replay"
-        : hasEvidenceExtractOutput
-          ? "Evidence Extract Durable Replay"
-          : "Durable Worker Replay"
+      "Evidence Extract Durable Replay"
+    );
+  } else if (hasJudgeOutput) {
+    nextRecord = await refreshRecordWithJudgeOutput(
+      nextRecord,
+      webResearch,
+      judgeOutputs[judgeOutputs.length - 1]
     );
   }
   if (codeOutputs.length) {
@@ -410,6 +422,98 @@ async function refreshRecordAfterDurableReplays(
     };
   }
   return nextRecord;
+}
+
+function localRefreshPlanForReplayOutputs(
+  outputs: DurableWorkerReplayOutput[],
+  record: AnalysisRecord
+): LocalRefreshPlan {
+  const hasWebOutput = outputs.some((output) => output.kind === "web_search" || output.kind === "web_fetch");
+  const hasEvidenceExtract = outputs.some((output) => output.kind === "evidence_extract");
+  const hasJudge = outputs.some((output) => output.kind === "judge");
+  const hasReport = outputs.some((output) => output.kind === "model_report");
+  const hasCode = outputs.some((output) => output.kind === "code_execute");
+  if (hasEvidenceExtract) {
+    return {
+      strategy: "full_downstream",
+      recomputed: [
+        "evidence_handoff",
+        "evidence_brief",
+        "judge",
+        "report",
+        "report_evidence_bindings",
+        "report_quality"
+      ],
+      downstreamTaskNodeIds: ["judge", "report"],
+      staleTaskNodeIds: [],
+      summary: "已刷新 evidence_extract artifact、Evidence Brief、Judge、Report 和质量审计。",
+      limitations: [
+        "本次只从 evidence_extract 节点向下刷新；未重新执行 search/fetch。",
+        "如果上游网页证据刚变化，应先重放 search/fetch，再重放 evidence_extract。"
+      ]
+    };
+  }
+  if (hasWebOutput) {
+    return {
+      strategy: "artifact_only",
+      recomputed: ["web_research"],
+      downstreamTaskNodeIds: [],
+      staleTaskNodeIds: ["evidence_extract", "judge", "report"],
+      summary:
+        "已合并网页搜索/抓取 replay 输出到 WebResearch 和 runtime artifact；Evidence Brief/Judge/Report 未自动重算，已标记为需要后续局部刷新。",
+      limitations: [
+        "search/fetch replay 只刷新网页证据层，避免自动改写判断和报告。",
+        "下一步应重放 evidence_extract task node，再由证据层向下刷新 Judge/Report。"
+      ]
+    };
+  }
+  if (hasJudge) {
+    return {
+      strategy: "partial_downstream",
+      recomputed: ["judge", "report", "report_evidence_bindings", "report_quality"],
+      downstreamTaskNodeIds: ["report"],
+      staleTaskNodeIds: [],
+      summary: "已应用 Judge replay 输出，并只刷新 Report Composer、证据绑定和质量审计。",
+      limitations: ["本次复用现有 Evidence Brief，不重算网页证据或 Evidence Brief。"]
+    };
+  }
+  if (hasReport) {
+    return {
+      strategy: "terminal_only",
+      recomputed: ["report", "report_evidence_bindings", "report_quality"],
+      downstreamTaskNodeIds: [],
+      staleTaskNodeIds: [],
+      summary: "已应用 Report replay 输出，并刷新证据绑定和质量审计。",
+      limitations: ["本次只替换报告 artifact，不重算 Evidence Brief 或 Judge。"]
+    };
+  }
+  if (hasCode) {
+    const recomputed: AgentRuntimeResumeImpact["recomputed"] = record.evidenceBrief?.recommendedExperiment.result
+      ? ["code_execution", "evidence_brief", "report_evidence_bindings", "report_quality"]
+      : ["code_execution"];
+    return {
+      strategy: "partial_downstream",
+      recomputed,
+      downstreamTaskNodeIds: [],
+      staleTaskNodeIds: record.evidenceBrief?.recommendedExperiment.result ? ["report"] : [],
+      summary: record.evidenceBrief?.recommendedExperiment.result
+        ? "已刷新代码执行 artifact、实验计算证据、Evidence Brief 派生分和质量审计；报告正文未自动改写。"
+        : "已刷新代码执行 trace 和 artifact；当前没有实验结果可映射到 Evidence Brief。",
+      limitations: [
+        record.evidenceBrief?.recommendedExperiment.result
+          ? "代码 replay 只影响实验计算证据和质检，不自动重写模型报告正文。"
+          : "当前分析没有可更新的实验结果，因此只刷新代码执行层。"
+      ]
+    };
+  }
+  return {
+    strategy: "artifact_only",
+    recomputed: [],
+    downstreamTaskNodeIds: [],
+    staleTaskNodeIds: [],
+    summary: "没有可合并的结构化 replay 输出。",
+    limitations: ["未刷新任何下游派生产物。"]
+  };
 }
 
 async function tryReplayEvidenceExtract(
@@ -442,7 +546,7 @@ async function tryReplayEvidenceExtract(
     limitations: [
       "本次 evidence_extract replay 复用当前 WebResearchSummary，不重新执行搜索或抓取。",
       "如果上游搜索/抓取证据已经变化，应先恢复对应 search/fetch task node，再恢复 evidence_extract。",
-      "当前刷新粒度仍是分析记录级，下一段继续缩小到 task graph 局部节点。"
+      "local refresh v2 会从 evidence_extract 节点向下刷新，避免 search/fetch replay 直接改写报告。"
     ],
     impact: buildResumeImpact({
       request,
@@ -489,6 +593,7 @@ async function refreshRecordWithWebResearch(
   const judged = await runJudgeAgent({
     evidenceBrief,
     webResearch,
+    memoryContext: record.memoryContext,
     contextLabel
   });
   const reportRun = await generateReportWithRuntime({
@@ -498,6 +603,7 @@ async function refreshRecordWithWebResearch(
     webResearch: judged.webResearch,
     evidenceBrief,
     calibrationContext: record.calibrationContext,
+    memoryContext: record.memoryContext,
     agentTrace: record.agentTrace ?? [],
     workType: record.workType,
     targetFeeling: record.targetFeeling,
@@ -531,6 +637,110 @@ async function refreshRecordWithWebResearch(
     agentTrace: attachReportQualityToTrace(record.agentTrace ?? [], reportQualityAudit),
     model: modelName(),
     errorMessage: null
+  };
+}
+
+async function refreshRecordWithJudgeOutput(
+  record: AnalysisRecord,
+  webResearch: WebResearchSummary,
+  output: Extract<DurableWorkerReplayOutput, { kind: "judge" }> | undefined
+): Promise<AnalysisRecord> {
+  if (!output || !record.evidenceBrief || !record.report) {
+    return {
+      ...record,
+      updatedAt: new Date().toISOString(),
+      webResearch
+    };
+  }
+  const judgedWebResearch: WebResearchSummary = {
+    ...webResearch,
+    judgeVerdict: output.verdict
+  };
+  const reportRun = await generateReportWithRuntime({
+    productVariant: record.productVariant,
+    brief: record.brief ?? "",
+    materials: record.materials ?? [],
+    webResearch: judgedWebResearch,
+    evidenceBrief: record.evidenceBrief,
+    calibrationContext: record.calibrationContext,
+    memoryContext: record.memoryContext,
+    agentTrace: record.agentTrace ?? [],
+    workType: record.workType,
+    targetFeeling: record.targetFeeling,
+    visibleText: record.visibleText,
+    productName: record.productName,
+    imageMetrics: record.imageMetrics
+  });
+  const report = reportRun.report;
+  const nextWebResearch = reportRun.webResearch;
+  const reportEvidenceBindings = buildReportEvidenceBindings({
+    report,
+    evidenceBrief: record.evidenceBrief
+  });
+  const reportQualityAudit = evaluateReportQuality({
+    report,
+    evidenceBrief: record.evidenceBrief,
+    webResearch: nextWebResearch,
+    materials: record.materials ?? [],
+    calibrationContext: record.calibrationContext,
+    reportEvidenceBindings
+  });
+  return {
+    ...record,
+    updatedAt: new Date().toISOString(),
+    webResearch: nextWebResearch,
+    report,
+    reportEvidenceBindings,
+    reportQualityAudit,
+    agentTrace: attachReportQualityToTrace(record.agentTrace ?? [], reportQualityAudit),
+    model: modelName(),
+    errorMessage: null
+  };
+}
+
+function markReplayStaleTaskNodes(
+  webResearch: WebResearchSummary,
+  refreshPlan: LocalRefreshPlan
+): WebResearchSummary {
+  const trace = webResearch.runtimeTrace;
+  if (!trace?.taskGraph || !refreshPlan.staleTaskNodeIds.length) return webResearch;
+  const now = new Date().toISOString();
+  const staleIds = new Set(refreshPlan.staleTaskNodeIds);
+  return {
+    ...webResearch,
+    runtimeTrace: {
+      ...trace,
+      updatedAt: now,
+      taskGraph: {
+        ...trace.taskGraph,
+        updatedAt: now,
+        executor: trace.taskGraph.executor
+          ? {
+              ...trace.taskGraph.executor,
+              updatedAt: now,
+              staleNodeIds: [...new Set([...trace.taskGraph.executor.staleNodeIds, ...refreshPlan.staleTaskNodeIds])],
+              warnings: [
+                ...trace.taskGraph.executor.warnings,
+                "Local refresh v2: web artifact replay updated upstream evidence; replay evidence_extract before trusting Judge/Report."
+              ].slice(-12)
+            }
+          : trace.taskGraph.executor,
+        nodes: trace.taskGraph.nodes.map((node) => {
+          if (!staleIds.has(node.id)) return node;
+          return {
+            ...node,
+            outputSummary:
+              "Stale after local web artifact replay; replay evidence_extract to refresh Evidence Brief/Judge/Report.",
+            metrics: {
+              ...(node.metrics ?? {}),
+              localRefreshState: "stale",
+              staleAfterReplayAt: now,
+              staleReason: "upstream web_search/web_fetch replay updated WebResearch only"
+            }
+          };
+        })
+      }
+    }
   };
 }
 
@@ -752,24 +962,7 @@ function recomputedForReplayOutputs(
   outputs: DurableWorkerReplayOutput[],
   record: AnalysisRecord
 ): AgentRuntimeResumeImpact["recomputed"] {
-  if (outputs.some((output) => output.kind === "web_search" || output.kind === "web_fetch")) {
-    return ["web_research", "evidence_brief", "judge", "report", "report_evidence_bindings", "report_quality"];
-  }
-  if (outputs.some((output) => output.kind === "evidence_extract")) {
-    return ["evidence_handoff", "evidence_brief", "judge", "report", "report_evidence_bindings", "report_quality"];
-  }
-  if (outputs.some((output) => output.kind === "judge")) {
-    return ["judge", "report", "report_evidence_bindings", "report_quality"];
-  }
-  if (outputs.some((output) => output.kind === "model_report")) {
-    return ["report", "report_evidence_bindings", "report_quality"];
-  }
-  if (outputs.some((output) => output.kind === "code_execute")) {
-    return record.evidenceBrief?.recommendedExperiment.result
-      ? ["code_execution", "evidence_brief", "report_evidence_bindings", "report_quality"]
-      : ["code_execution"];
-  }
-  return [];
+  return localRefreshPlanForReplayOutputs(outputs, record).recomputed;
 }
 
 function mergeReplayOutputIntoWebResearch(
@@ -942,22 +1135,28 @@ function normalizedUrl(url: string) {
 function buildResumeImpact({
   request,
   replayScope,
+  localRefreshStrategy,
   sourceTaskNodeId,
   replayedTaskNodeIds = [],
   replayedWorkerRunIds = [],
   replayedToolCallIds = [],
   durableQueueRecordIds = [],
+  downstreamTaskNodeIds,
+  staleTaskNodeIds = [],
   artifactIds = [],
   recomputed = [],
   notes = []
 }: {
   request: AgentRuntimeResumeRequest;
   replayScope: AgentRuntimeResumeImpact["replayScope"];
+  localRefreshStrategy?: AgentRuntimeResumeImpact["localRefreshStrategy"];
   sourceTaskNodeId?: string;
   replayedTaskNodeIds?: Array<string | undefined>;
   replayedWorkerRunIds?: Array<string | undefined>;
   replayedToolCallIds?: Array<string | undefined>;
   durableQueueRecordIds?: Array<string | undefined>;
+  downstreamTaskNodeIds?: Array<string | undefined>;
+  staleTaskNodeIds?: Array<string | undefined>;
   artifactIds?: Array<string | undefined>;
   recomputed?: AgentRuntimeResumeImpact["recomputed"];
   notes?: string[];
@@ -965,6 +1164,7 @@ function buildResumeImpact({
   const source = sourceTaskNodeId ?? request.taskNodeId ?? taskNodeIdFromRequest(request);
   return {
     replayScope,
+    localRefreshStrategy,
     sourceTargetId: request.targetId,
     sourceTaskNodeId: source,
     replayedTaskNodeIds: uniqueStrings(replayedTaskNodeIds),
@@ -977,7 +1177,10 @@ function buildResumeImpact({
       request.toolCallId
     ]),
     durableQueueRecordIds: uniqueStrings(durableQueueRecordIds),
-    downstreamTaskNodeIds: downstreamTaskNodeIdsFor(source, replayScope),
+    downstreamTaskNodeIds: downstreamTaskNodeIds
+      ? uniqueStrings(downstreamTaskNodeIds)
+      : downstreamTaskNodeIdsFor(source, replayScope),
+    staleTaskNodeIds: uniqueStrings(staleTaskNodeIds),
     recomputed: uniqueResumeRecomputed(recomputed),
     artifactIds: uniqueStrings(artifactIds),
     notes: uniqueStrings(notes).slice(0, 8)
@@ -1452,7 +1655,8 @@ function applyResumeImpactToTrace(
     sourceTaskNodeId ?? ""
   ].filter(Boolean));
   const downstreamNodeIds = new Set(impact.downstreamTaskNodeIds);
-  const affectedNodeIds = new Set([...replayedNodeIds, ...downstreamNodeIds]);
+  const staleNodeIds = new Set(impact.staleTaskNodeIds ?? []);
+  const affectedNodeIds = new Set([...replayedNodeIds, ...downstreamNodeIds, ...staleNodeIds]);
   if (!affectedNodeIds.size) return trace;
 
   return {
@@ -1462,7 +1666,11 @@ function applyResumeImpactToTrace(
       updatedAt: request.updatedAt,
       nodes: trace.taskGraph.nodes.map((node) => {
         if (!affectedNodeIds.has(node.id)) return node;
-        const role = replayedNodeIds.has(node.id) ? "replayed" : "downstream";
+        const role = replayedNodeIds.has(node.id)
+          ? "replayed"
+          : staleNodeIds.has(node.id)
+            ? "stale"
+            : "downstream";
         const status = statusForImpactedTaskNode(node.status, request.status, role);
         const completedAt =
           status === "completed" || status === "failed" || status === "skipped"
@@ -1489,11 +1697,13 @@ function applyResumeImpactToTrace(
             lastResumeRequestId: request.id,
             lastResumeAt: request.updatedAt,
             lastReplayScope: impact.replayScope,
+            localRefreshStrategy: impact.localRefreshStrategy ?? "",
             lastReplayRole: role,
             lastReplayStatus: request.status,
             replayDurableRecordCount: impact.durableQueueRecordIds.length,
             replayArtifactCount: impact.artifactIds.length,
             replayDownstreamCount: impact.downstreamTaskNodeIds.length,
+            replayStaleCount: (impact.staleTaskNodeIds ?? []).length,
             replayRecomputed: impact.recomputed.join(",")
           }
         };
@@ -1505,8 +1715,9 @@ function applyResumeImpactToTrace(
 function statusForImpactedTaskNode(
   current: AgentTaskGraphNode["status"],
   resumeStatus: AgentRuntimeResumeRequest["status"],
-  role: "replayed" | "downstream"
+  role: "replayed" | "downstream" | "stale"
 ): AgentTaskGraphNode["status"] {
+  if (role === "stale") return current;
   if (resumeStatus === "blocked" && role === "replayed") return "failed";
   if (resumeStatus === "unsupported" && role === "replayed") return "skipped";
   if (resumeStatus === "applied") return "completed";
@@ -1516,10 +1727,13 @@ function statusForImpactedTaskNode(
 function outputSummaryForImpactedTaskNode(
   current: string | undefined,
   request: AgentRuntimeResumeRequest,
-  role: "replayed" | "downstream"
+  role: "replayed" | "downstream" | "stale"
 ) {
   if (role === "replayed") {
     return `Resume ${request.status}: ${request.resultSummary}`;
+  }
+  if (role === "stale") {
+    return `Stale after local refresh: replay upstream artifact, then refresh this node explicitly. ${request.impact?.notes.join(" ") || request.resultSummary}`;
   }
   return `Resume downstream refresh: ${request.impact?.recomputed.join(", ") || request.resultSummary}`;
 }

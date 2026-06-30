@@ -649,11 +649,17 @@ export type AgentRuntimeResumeRequest = {
 
 export type AgentRuntimeResumeImpact = {
   replayScope:
+    | "artifact"
     | "control_plane"
     | "worker"
     | "task_node"
     | "evidence_extract"
     | "terminal";
+  localRefreshStrategy?:
+    | "artifact_only"
+    | "partial_downstream"
+    | "terminal_only"
+    | "full_downstream";
   sourceTargetId: string;
   sourceTaskNodeId?: string;
   replayedTaskNodeIds: string[];
@@ -661,6 +667,7 @@ export type AgentRuntimeResumeImpact = {
   replayedToolCallIds: string[];
   durableQueueRecordIds: string[];
   downstreamTaskNodeIds: string[];
+  staleTaskNodeIds?: string[];
   recomputed:
     | Array<
         | "web_research"

@@ -3413,9 +3413,15 @@ function SubagentRuntimeSection({
               {request.impact ? (
                 <div>
                   <span>scope {resumeImpactScopeLabel(request.impact.replayScope)}</span>
+                  {request.impact.localRefreshStrategy ? (
+                    <span>strategy {resumeLocalRefreshStrategyLabel(request.impact.localRefreshStrategy)}</span>
+                  ) : null}
                   {request.impact.sourceTaskNodeId ? <span>source {request.impact.sourceTaskNodeId}</span> : null}
                   {request.impact.downstreamTaskNodeIds.length ? (
                     <span>downstream {request.impact.downstreamTaskNodeIds.join(" / ")}</span>
+                  ) : null}
+                  {request.impact.staleTaskNodeIds?.length ? (
+                    <span>stale {request.impact.staleTaskNodeIds.join(" / ")}</span>
                   ) : null}
                   {request.impact.recomputed.length ? (
                     <span>recomputed {request.impact.recomputed.join(" / ")}</span>
@@ -3635,11 +3641,21 @@ function resumeRequestActionLabel(action: AgentRuntimeResumeAction) {
 }
 
 function resumeImpactScopeLabel(scope: NonNullable<AgentRuntimeResumeRequest["impact"]>["replayScope"]) {
+  if (scope === "artifact") return "artifact";
   if (scope === "worker") return "worker";
   if (scope === "task_node") return "task";
   if (scope === "evidence_extract") return "evidence";
   if (scope === "terminal") return "terminal";
   return "control";
+}
+
+function resumeLocalRefreshStrategyLabel(
+  strategy: NonNullable<NonNullable<AgentRuntimeResumeRequest["impact"]>["localRefreshStrategy"]>
+) {
+  if (strategy === "artifact_only") return "artifact only";
+  if (strategy === "partial_downstream") return "partial";
+  if (strategy === "terminal_only") return "terminal only";
+  return "full";
 }
 
 function workerQueueStatusLabel(status: NonNullable<AgentRuntimeTrace["workerQueue"]>[number]["status"]) {
