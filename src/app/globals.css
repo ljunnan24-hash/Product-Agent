@@ -3108,49 +3108,21 @@ textarea:focus {
   padding: 28px;
 }
 
-.score-row {
+.reader-summary {
   display: grid;
-  grid-template-columns: 128px 1fr;
-  gap: 24px;
-  align-items: center;
-  margin-bottom: 22px;
+  gap: 18px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--line);
 }
 
-.score-dial {
+.reader-summary-head {
   display: grid;
-  place-items: center;
-  width: 128px;
-  height: 128px;
-  border: 2px solid var(--ink);
-  background: #fbfcfe;
-}
-
-.score-dial strong {
-  font-size: 54px;
-  line-height: 0.9;
-}
-
-.score-dial span {
-  color: var(--muted);
-  font-size: 15px;
-  font-weight: 720;
-}
-
-.score-dial.strong {
-  background: #edf6e9;
-}
-
-.score-dial.mid {
-  background: #fff4df;
-}
-
-.score-dial.low {
-  background: #fbe7df;
+  gap: 12px;
 }
 
 .report-content h1 {
   margin-bottom: 0;
-  font-size: clamp(28px, 4vw, 48px);
+  font-size: 42px;
   line-height: 1.05;
   letter-spacing: 0;
 }
@@ -3160,6 +3132,143 @@ textarea:focus {
   color: #39352e;
   font-size: 18px;
   line-height: 1.65;
+}
+
+.reader-summary-head .first-impression {
+  margin: 0;
+}
+
+.reader-answer-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--ink);
+  background: #ffffff;
+}
+
+.reader-answer-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 16px;
+  border-right: 1px solid var(--line);
+  background: #fbfcfe;
+}
+
+.reader-answer-card:last-child {
+  border-right: 0;
+}
+
+.reader-answer-card span,
+.reader-score-strip span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 780;
+  text-transform: uppercase;
+}
+
+.reader-answer-card strong {
+  display: block;
+  color: var(--ink);
+  font-size: 18px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.reader-answer-card p {
+  margin: 0;
+  color: #39352e;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.reader-score-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.reader-score-strip > div {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+}
+
+.reader-score-strip .strong {
+  background: #edf6e9;
+}
+
+.reader-score-strip .mid {
+  background: #fff4df;
+}
+
+.reader-score-strip .low {
+  background: #fbe7df;
+}
+
+.reader-score-strip strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.report-detail-details {
+  margin-top: 22px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+}
+
+.report-detail-details > summary {
+  display: grid;
+  gap: 4px;
+  cursor: pointer;
+  padding: 14px;
+  color: var(--muted);
+  list-style: none;
+}
+
+.report-detail-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.report-detail-details > summary span {
+  font-size: 11px;
+  font-weight: 780;
+  text-transform: uppercase;
+}
+
+.report-detail-details > summary strong {
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.report-detail-details > summary::after {
+  content: "展开完整分析";
+  justify-self: start;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.report-detail-details[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.report-detail-details[open] > summary::after {
+  content: "收起完整分析";
+}
+
+.report-detail-details:not([open]) .report-detail-body {
+  display: none;
+}
+
+.report-detail-body {
+  padding: 16px;
 }
 
 .tag-row {
@@ -6854,6 +6963,20 @@ textarea:focus {
     position: static;
   }
 
+  .reader-answer-grid,
+  .reader-score-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .reader-answer-card {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .reader-answer-card:last-child {
+    border-bottom: 0;
+  }
+
   .upload-pane {
     min-height: auto;
   }
@@ -6886,7 +7009,8 @@ textarea:focus {
   .field-grid,
   .metric-strip,
   .artifact-diagnostics,
-  .score-row,
+  .reader-answer-grid,
+  .reader-score-strip,
   .potential-panel,
   .reference-grid,
   .share-panel {
@@ -6999,12 +7123,6 @@ textarea:focus {
     justify-content: flex-start;
   }
 
-  .score-row {
-    display: grid;
-    gap: 16px;
-    align-items: flex-start;
-  }
-
   .blind-summary,
   .blind-score-editor,
   .blind-manual-row {
@@ -7079,14 +7197,5 @@ textarea:focus {
     flex: 1 1 auto;
     justify-content: center;
     width: 100%;
-  }
-
-  .score-dial {
-    width: 112px;
-    height: 112px;
-  }
-
-  .score-dial strong {
-    font-size: 48px;
   }
 }

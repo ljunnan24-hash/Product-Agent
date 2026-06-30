@@ -290,6 +290,25 @@ export function ReportView({ record }: Props) {
     [record.evidenceBrief, record.reportEvidenceBindings, report]
   );
   const reportEvidenceCards = record.evidenceBrief?.evidenceCards ?? [];
+  const leadingIssue = report.top_issues[0];
+  const leadingEvidence = report.market_evidence[0];
+  const leadingSuggestion = report.actionable_suggestions[0];
+  const readerDecision = record.evidenceBrief
+    ? decisionLabel(record.evidenceBrief.decision.decision)
+    : potentialSummaryLabel(report.potential_score);
+  const readerWhyTitle = leadingIssue?.title ?? leadingEvidence?.signal ?? "先确认真实需求";
+  const readerWhyCopy =
+    leadingIssue?.why_it_matters ??
+    leadingEvidence?.interpretation ??
+    report.first_impression;
+  const readerNextStepTitle =
+    record.evidenceBrief?.recommendedExperiment.title ??
+    (leadingIssue ? `先处理：${leadingIssue.title}` : "先做一轮用户验证");
+  const readerNextStepDetail =
+    leadingSuggestion ??
+    leadingIssue?.how_to_fix ??
+    record.evidenceBrief?.recommendedExperiment.hypothesis ??
+    "用最小验证动作确认用户是否真的愿意为这个问题改变现有做法。";
   const evidenceBindingFor = (
     targetSection: ReportEvidenceBinding["targetSection"],
     targetIndex?: number
@@ -404,115 +423,151 @@ export function ReportView({ record }: Props) {
         </aside>
 
         <article className="report-content">
-          <div className="score-row">
-            <div className={`score-dial ${scoreTone}`}>
-              <strong>{report.diagnosis_score}</strong>
-              <span>/100</span>
-            </div>
-            <div>
+          <section className="reader-summary">
+            <div className="reader-summary-head">
               <p className="report-kicker">{report.share_summary.current_style}</p>
               <h1>{report.share_summary.one_line_diagnosis}</h1>
+              <p className="first-impression">{report.first_impression}</p>
             </div>
-          </div>
 
-          <p className="first-impression">{report.first_impression}</p>
-
-          <section className="potential-panel">
-            <div>
-              <span>产品潜力</span>
-              <strong>{report.potential_score}</strong>
+            <div className="reader-answer-grid" aria-label="报告摘要">
+              <div className="reader-answer-card">
+                <span>结论</span>
+                <strong>{readerDecision}</strong>
+                <p>{report.potential_verdict}</p>
+              </div>
+              <div className="reader-answer-card">
+                <span>为什么</span>
+                <strong>{readerWhyTitle}</strong>
+                <p>{readerWhyCopy}</p>
+              </div>
+              <div className="reader-answer-card">
+                <span>下一步</span>
+                <strong>{readerNextStepTitle}</strong>
+                <p>{readerNextStepDetail}</p>
+              </div>
             </div>
-            <p>{report.potential_verdict}</p>
-            <ReportEvidenceBindingCard
-              binding={evidenceBindingFor("potential_verdict")}
-              evidenceCards={reportEvidenceCards}
-            />
+
+            <div className="reader-score-strip">
+              <div className={`reader-score-pill ${scoreTone}`}>
+                <span>诊断分</span>
+                <strong>{report.diagnosis_score}/100</strong>
+              </div>
+              <div>
+                <span>产品潜力</span>
+                <strong>{report.potential_score}/100</strong>
+              </div>
+              <div>
+                <span>参考对象</span>
+                <strong>{references || "暂无"}</strong>
+              </div>
+            </div>
           </section>
 
-          <div className="tag-row">
-            {report.diagnosis_tags.map((tag) => (
-              <span key={tag}>{tag}</span>
-            ))}
-          </div>
-
-          <section className="report-section">
-            <h2>市场证据</h2>
-            <div className="evidence-list">
-              {report.market_evidence.map((item, index) => (
-                <div className="evidence-item" key={item.signal}>
-                  <h3>{item.signal}</h3>
-                  <p>{item.evidence}</p>
-                  <strong>{item.interpretation}</strong>
-                  <ReportEvidenceBindingCard
-                    binding={evidenceBindingFor("market_evidence", index)}
-                    evidenceCards={reportEvidenceCards}
-                  />
+          <details className="report-detail-details">
+            <summary>
+              <span>完整分析</span>
+              <strong>市场证据、主要问题、参考对象和行动清单</strong>
+            </summary>
+            <div className="report-detail-body">
+              <section className="potential-panel">
+                <div>
+                  <span>产品潜力</span>
+                  <strong>{report.potential_score}</strong>
                 </div>
-              ))}
-            </div>
-          </section>
+                <p>{report.potential_verdict}</p>
+                <ReportEvidenceBindingCard
+                  binding={evidenceBindingFor("potential_verdict")}
+                  evidenceCards={reportEvidenceCards}
+                />
+              </section>
 
-          <section className="report-section">
-            <h2>最大问题</h2>
-            <div className="issue-list">
-              {report.top_issues.map((issue, index) => (
-                <div className="issue-item" key={issue.title}>
-                  <span>{index + 1}</span>
-                  <div>
-                    <h3>{issue.title}</h3>
-                    <p>{issue.why_it_matters}</p>
-                    <strong>{issue.how_to_fix}</strong>
-                    <ReportEvidenceBindingCard
-                      binding={evidenceBindingFor("top_issues", index)}
-                      evidenceCards={reportEvidenceCards}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="report-section">
-            <h2>推荐参考</h2>
-            <div className="reference-grid">
-              {report.references.map((reference) => (
-                <div className="reference-card" key={reference.name}>
-                  <div>
-                    <h3>{reference.name}</h3>
-                    <span>{reference.category}</span>
-                  </div>
-                  <p>{reference.why_relevant}</p>
-                  <strong>{reference.what_to_learn}</strong>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="report-section">
-            <h2>下一步行动</h2>
-            <ul className="suggestion-list">
-              {report.actionable_suggestions.map((suggestion, index) => (
-                <li key={suggestion}>
-                  <span>{suggestion}</span>
-                  <ReportEvidenceBindingCard
-                    binding={evidenceBindingFor("actionable_suggestions", index)}
-                    evidenceCards={reportEvidenceCards}
-                  />
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          {report.limitations.length > 0 ? (
-            <section className="report-section muted-section">
-              <h2>诊断边界</h2>
-              <ul>
-                {report.limitations.map((limitation) => (
-                  <li key={limitation}>{limitation}</li>
+              <div className="tag-row">
+                {report.diagnosis_tags.map((tag) => (
+                  <span key={tag}>{tag}</span>
                 ))}
-            </ul>
-          </section>
-        ) : null}
+              </div>
+
+              <section className="report-section">
+                <h2>市场证据</h2>
+                <div className="evidence-list">
+                  {report.market_evidence.map((item, index) => (
+                    <div className="evidence-item" key={item.signal}>
+                      <h3>{item.signal}</h3>
+                      <p>{item.evidence}</p>
+                      <strong>{item.interpretation}</strong>
+                      <ReportEvidenceBindingCard
+                        binding={evidenceBindingFor("market_evidence", index)}
+                        evidenceCards={reportEvidenceCards}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="report-section">
+                <h2>最大问题</h2>
+                <div className="issue-list">
+                  {report.top_issues.map((issue, index) => (
+                    <div className="issue-item" key={issue.title}>
+                      <span>{index + 1}</span>
+                      <div>
+                        <h3>{issue.title}</h3>
+                        <p>{issue.why_it_matters}</p>
+                        <strong>{issue.how_to_fix}</strong>
+                        <ReportEvidenceBindingCard
+                          binding={evidenceBindingFor("top_issues", index)}
+                          evidenceCards={reportEvidenceCards}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="report-section">
+                <h2>推荐参考</h2>
+                <div className="reference-grid">
+                  {report.references.map((reference) => (
+                    <div className="reference-card" key={reference.name}>
+                      <div>
+                        <h3>{reference.name}</h3>
+                        <span>{reference.category}</span>
+                      </div>
+                      <p>{reference.why_relevant}</p>
+                      <strong>{reference.what_to_learn}</strong>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="report-section">
+                <h2>下一步行动</h2>
+                <ul className="suggestion-list">
+                  {report.actionable_suggestions.map((suggestion, index) => (
+                    <li key={suggestion}>
+                      <span>{suggestion}</span>
+                      <ReportEvidenceBindingCard
+                        binding={evidenceBindingFor("actionable_suggestions", index)}
+                        evidenceCards={reportEvidenceCards}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </section>
+
+              {report.limitations.length > 0 ? (
+                <section className="report-section muted-section">
+                  <h2>诊断边界</h2>
+                  <ul>
+                    {report.limitations.map((limitation) => (
+                      <li key={limitation}>{limitation}</li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+            </div>
+          </details>
 
           <div className="share-panel">
             <div>
@@ -2351,6 +2406,12 @@ function decisionLabel(decision: EvidenceBrief["decision"]["decision"]) {
   if (decision === "test_first") return "先验证";
   if (decision === "reposition") return "重定位";
   return "停止";
+}
+
+function potentialSummaryLabel(score: number) {
+  if (score >= 75) return "值得继续推进";
+  if (score >= 55) return "先验证再投入";
+  return "先重看定位";
 }
 
 function verdictLabel(verdict: EvidenceBrief["evidenceVerdict"]) {
