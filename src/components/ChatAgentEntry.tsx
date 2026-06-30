@@ -116,6 +116,7 @@ export function ChatAgentEntry({ variant }: Props) {
   const composerPlaceholder = isAwaitingSupplement
     ? "补充目标用户、痛点或核心功能。"
     : "粘贴产品介绍，或补充一句你想判断的问题。";
+  const followUpDisplay = simplifyFollowUpPrompt(followUpPrompt);
 
   useEffect(() => {
     void restoreLastRun();
@@ -309,9 +310,14 @@ export function ChatAgentEntry({ variant }: Props) {
         <div className="chat-history conversation-thread" aria-label="Product Agent conversation">
           <Message role="agent">
             <strong>把产品介绍发给我。</strong>
-            <p>上传文件，或直接粘贴产品介绍。</p>
+            <p>直接粘贴一段介绍，也可以上传材料。</p>
             <div className="demo-example-action">
-              <button type="button" onClick={loadDemoExample} disabled={isLoadingExample}>
+              <button
+                type="button"
+                onClick={loadDemoExample}
+                disabled={isLoadingExample}
+                aria-label="载入示例产品介绍"
+              >
                 {isLoadingExample ? <Loader2 className="spin" size={16} /> : <Wand2 size={16} />}
                 载入示例
               </button>
@@ -339,7 +345,7 @@ export function ChatAgentEntry({ variant }: Props) {
               {followUpPrompt ? (
                 <div className="agent-follow-up">
                   <strong>我先看了一遍，还需要一点信息。</strong>
-                  <p>{followUpPrompt}</p>
+                  <p>{followUpDisplay}</p>
                 </div>
               ) : (
                 <p>收到。我会先读产品介绍，再查证据，最后给潜力判断和下一步。</p>
@@ -483,6 +489,7 @@ export function ChatAgentEntry({ variant }: Props) {
               className="attachment-button"
               type="button"
               onClick={() => inputRef.current?.click()}
+              aria-label="上传产品介绍文件"
             >
               <Paperclip size={17} />
               上传产品介绍
@@ -490,7 +497,11 @@ export function ChatAgentEntry({ variant }: Props) {
 
             <div className="composer-spacer" />
 
-            <button className="send-button" disabled={isSubmitting}>
+            <button
+              className="send-button"
+              disabled={isSubmitting}
+              aria-label={isSubmitting ? "正在分析" : "发送产品介绍"}
+            >
               {isSubmitting ? <Loader2 className="spin" size={18} /> : <ArrowUp size={18} />}
             </button>
           </div>
@@ -525,6 +536,12 @@ export function ChatAgentEntry({ variant }: Props) {
       }
 
       const run = payload.run;
+      if (options?.silent && !shouldRestoreRun(run)) {
+        forgetRunId(run.id);
+        setResumedRun(null);
+        setRunEvents([]);
+        return;
+      }
       const restoredEvents = liveEventsFromRun(run);
       if (restoredEvents.length) {
         setRunEvents(restoredEvents.slice(-24));
@@ -588,6 +605,21 @@ function mergeIntakeBrief(previousBrief: string, supplement: string) {
   if (!previous) return next;
   if (!next) return previous;
   return `${previous}\n\n补充：${next}`;
+}
+
+function simplifyFollowUpPrompt(prompt: string) {
+  const text = prompt.replace(/\s+/g, " ").trim();
+  const supplement = text.match(/请补充[:：]\s*([^。]+)。?/);
+  if (supplement?.[1]) {
+    return `请补充：${supplement[1]}。`;
+  }
+  return text;
+}
+
+function shouldRestoreRun(run: AnalysisRunLog) {
+  if (run.status === "running" || run.status === "completed") return true;
+  if (run.retryInput?.canAutoPrefill) return true;
+  return false;
 }
 
 function isAllowedMaterial(file: File) {
