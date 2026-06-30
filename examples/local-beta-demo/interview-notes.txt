@@ -1,0 +1,32 @@
+SignalShelf interview notes
+
+Interview sample: 12 early-stage builders, mostly technical founders or maintainers.
+
+Repeated pains:
+- 7 people said they collect feedback but do not trust their own prioritization.
+- 6 people said they only review signals right before a launch or investor update.
+- 5 people said GitHub issues and Discord messages are hard to compare with analytics.
+- 4 people said they wanted a "weekly digest" but not another dashboard.
+- 3 people said they would rather see uncomfortable counter-evidence than motivational summaries.
+
+Positive reactions:
+- "If this tells me what not to build this week, that is useful."
+- "I do not want a CRM. I want a product judgment log."
+- "A local-only version is easier to try with messy notes."
+
+Objections:
+- "This sounds like something I can do with a spreadsheet."
+- "I do not want to paste private customer data into a random cloud app."
+- "Weekly summaries are nice, but I need the source quotes nearby."
+- "I would not pay until it connects to GitHub or Discord."
+
+Pricing signals:
+- 3 people said they might pay 10-20 USD/month for a solo product.
+- 2 agency operators said client reporting would be worth more if evidence export looked professional.
+- 5 people were unsure because the workflow is not yet a habit.
+
+Suggested experiments:
+- Run a concierge version for 5 builders for 3 weeks.
+- Compare memo quality against a manually written founder update.
+- Test a GitHub-only workflow for open-source maintainers.
+- Ask users to mark which memo claims they trusted and which they ignored.

@@ -19,6 +19,8 @@ pnpm local
 
 打开首页后会看到 Local Beta 状态面板，里面会展示 `pnpm doctor` 的结果，包括依赖、环境变量、Docker、worker daemon 和 durable queue。没有 blocker 时可以直接上传材料或粘贴 GitHub repo URL 开始分析。
 
+第一次试用可以点击首页对话里的 `载入示例`。它会填入 `examples/local-beta-demo` 的 SignalShelf 样例材料，包括产品 README、访谈记录和早期渠道数据，适合快速生成第一份报告。
+
 常见状态：
 
 - `0 阻塞`：本地环境可以跑。

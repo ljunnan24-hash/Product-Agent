@@ -69,6 +69,16 @@ type ResumedRunState = {
   updatedAt: string;
 };
 
+type DemoExamplePayload = {
+  brief: string;
+  githubRepoUrl?: string;
+  materials: Array<{
+    name: string;
+    mimeType: string;
+    content: string;
+  }>;
+};
+
 type Props = {
   variant: ProductVariantConfig;
 };
@@ -94,6 +104,7 @@ export function ChatAgentEntry({ variant }: Props) {
   const [runEvents, setRunEvents] = useState<LiveRunEvent[]>([]);
   const [resumedRun, setResumedRun] = useState<ResumedRunState | null>(null);
   const [isRestoringRun, setIsRestoringRun] = useState(false);
+  const [isLoadingExample, setIsLoadingExample] = useState(false);
 
   const primaryMetrics = materials[0]?.metrics ?? null;
 
@@ -220,6 +231,37 @@ export function ChatAgentEntry({ variant }: Props) {
     await startAnalysis(body);
   }
 
+  async function loadDemoExample() {
+    setIsLoadingExample(true);
+    setError("");
+    try {
+      const response = await fetch("/api/examples/local-beta-demo", {
+        cache: "no-store"
+      });
+      const payload = (await response.json()) as DemoExamplePayload;
+      if (!response.ok) {
+        throw new Error("示例材料读取失败");
+      }
+      setBrief(payload.brief || "");
+      setGithubRepoUrl(payload.githubRepoUrl || "");
+      setMaterials(
+        payload.materials.slice(0, 6).map((material) => ({
+          file: new File([material.content], material.name, {
+            type: material.mimeType || "text/plain"
+          }),
+          preview: null,
+          metrics: null
+        }))
+      );
+      setRunEvents([]);
+      setResumedRun(null);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "示例材料读取失败");
+    } finally {
+      setIsLoadingExample(false);
+    }
+  }
+
   return (
     <main className="chat-agent-layout conversation-mode">
       <LocalBetaStatusPanel />
@@ -235,6 +277,13 @@ export function ChatAgentEntry({ variant }: Props) {
                   <small>{material.detail}</small>
                 </span>
               ))}
+            </div>
+            <div className="demo-example-action">
+              <button type="button" onClick={loadDemoExample} disabled={isLoadingExample}>
+                {isLoadingExample ? <Loader2 className="spin" size={16} /> : <Wand2 size={16} />}
+                载入示例
+              </button>
+              <small>使用内置 SignalShelf 材料快速跑第一份报告。</small>
             </div>
           </Message>
           {materials.length > 0 || githubRepoUrl.trim() ? (

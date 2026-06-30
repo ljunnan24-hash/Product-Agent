@@ -1,0 +1,26 @@
+{
+  "id": "local-beta-demo",
+  "title": "SignalShelf local beta demo",
+  "brief": "请判断 SignalShelf 是否适合作为 local-first 产品分析工具继续推进。重点看：目标用户是否足够锐利，weekly decision memo 是否是好 wedge，下一步应该验证什么。",
+  "githubRepoUrl": "",
+  "materials": [
+    {
+      "name": "SignalShelf-README.md",
+      "path": "README.md",
+      "mimeType": "text/markdown",
+      "description": "产品定位、目标用户、风险和当前问题。"
+    },
+    {
+      "name": "SignalShelf-interview-notes.txt",
+      "path": "interview-notes.txt",
+      "mimeType": "text/plain",
+      "description": "12 个早期用户访谈里的重复痛点、正向反馈和反对意见。"
+    },
+    {
+      "name": "SignalShelf-waitlist-metrics.csv",
+      "path": "waitlist-metrics.csv",
+      "mimeType": "text/plain",
+      "description": "早期渠道、访问、注册和激活数据，作为文本材料输入。"
+    }
+  ]
+}

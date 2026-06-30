@@ -448,6 +448,41 @@ a {
   line-height: 1.35;
 }
 
+.demo-example-action {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.demo-example-action button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 34px;
+  border: 1px solid #cfd8e6;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #202833;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 780;
+  padding: 0 11px;
+}
+
+.demo-example-action button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.demo-example-action small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .user-material-list {
   display: flex;
   flex-wrap: wrap;
