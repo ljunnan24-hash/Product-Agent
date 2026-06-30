@@ -110,6 +110,9 @@ export function ChatAgentEntry({ variant }: Props) {
   const [isLoadingExample, setIsLoadingExample] = useState(false);
 
   const primaryMetrics = materials[0]?.metrics ?? null;
+  const composerPlaceholder = followUpPrompt
+    ? "补充目标用户、痛点或核心功能。"
+    : "粘贴产品介绍，或补充一句你想判断的问题。";
 
   useEffect(() => {
     void restoreLastRun();
@@ -408,6 +411,11 @@ export function ChatAgentEntry({ variant }: Props) {
         </div>
 
         <div className="composer-box">
+          {followUpPrompt ? (
+            <p className="composer-follow-up-hint">
+              补充目标用户、痛点或核心功能后再发送。
+            </p>
+          ) : null}
           {materials.length > 0 ? (
             <div className="material-strip">
               {materials.map((material, index) => (
@@ -442,7 +450,7 @@ export function ChatAgentEntry({ variant }: Props) {
           <textarea
             value={brief}
             onChange={(event) => setBrief(event.target.value)}
-            placeholder="粘贴产品介绍，或补充一句你想判断的问题。"
+            placeholder={composerPlaceholder}
             rows={5}
           />
 
@@ -898,61 +906,76 @@ function LiveReasoningPanel({
   const latestByStage = new Map<LiveRunStageId, LiveRunEvent>();
   for (const event of events) latestByStage.set(event.stage, event);
   const latestEvent =
-    [...events].reverse().find((event) => event.status === "running") ??
+    [...events].reverse().find((event) => event.status === "failed" || event.status === "running") ??
     events.at(-1);
   const hasStarted = events.length > 0;
   const recentEvents = events.slice(-5);
+  const statusText = visibleRunSummary(latestEvent, hasTextMaterial);
 
   return (
-    <section className={`live-harness ${isSubmitting ? "active" : ""}`} aria-label="可见思考过程">
+    <section className={`live-harness compact ${isSubmitting ? "active" : ""}`} aria-label="分析状态">
       <div className="live-harness-header">
         <div>
-          <span>运行过程</span>
+          <span>分析状态</span>
           <strong>
             {latestEvent?.title ||
               (isSubmitting ? "启动中" : hasMaterials ? "准备好了" : "等待产品介绍")}
           </strong>
         </div>
-        <small>{isSubmitting ? "执行到哪里会实时更新" : "开始后逐步展开"}</small>
+        <small>{isSubmitting ? "正在处理" : "可查看过程"}</small>
       </div>
       <div className="live-current">
         <CircleDashed className={isSubmitting ? "spin" : ""} size={16} />
-        <p>
-          {latestEvent?.summary ||
-            (hasTextMaterial
-              ? "我会先读产品介绍，再查证据。"
-              : "我会先读产品介绍，再查证据。")}
-        </p>
+        <p>{statusText}</p>
       </div>
-      <div className="live-stage-list">
-        {liveStageConfig.map((step, index) => {
-          const event = latestByStage.get(step.id);
-          const status = event?.status ?? (hasStarted ? "waiting" : hasMaterials ? "ready" : "waiting");
-          const Icon = step.icon;
-          return (
-            <div className={`live-stage ${status}`} key={step.id}>
-              <span>{status === "completed" ? <CheckCircle2 size={13} /> : index + 1}</span>
-              <Icon size={16} />
-              <div>
-                <strong>{step.title}</strong>
-                <p>{event?.summary || step.body}</p>
+      <details className="live-details">
+        <summary>查看过程</summary>
+        <div className="live-stage-list">
+          {liveStageConfig.map((step, index) => {
+            const event = latestByStage.get(step.id);
+            const status = event?.status ?? (hasStarted ? "waiting" : hasMaterials ? "ready" : "waiting");
+            const Icon = step.icon;
+            return (
+              <div className={`live-stage ${status}`} key={step.id}>
+                <span>{status === "completed" ? <CheckCircle2 size={13} /> : index + 1}</span>
+                <Icon size={16} />
+                <div>
+                  <strong>{step.title}</strong>
+                  <p>{event?.summary || step.body}</p>
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
-      {recentEvents.length ? (
-        <div className="live-event-feed" aria-label="实时事件">
-          {recentEvents.map((event, index) => (
-            <div className={`live-event ${event.status}`} key={`${event.stage}-${event.status}-${event.at || index}`}>
-              <strong>{event.title}</strong>
-              <p>{event.detail || event.summary}</p>
-            </div>
-          ))}
+            );
+          })}
         </div>
-      ) : null}
+        {recentEvents.length ? (
+          <div className="live-event-feed" aria-label="实时事件">
+            {recentEvents.map((event, index) => (
+              <div className={`live-event ${event.status}`} key={`${event.stage}-${event.status}-${event.at || index}`}>
+                <strong>{event.title}</strong>
+                <p>{event.detail || event.summary}</p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </details>
     </section>
   );
+}
+
+function visibleRunSummary(event: LiveRunEvent | undefined, hasTextMaterial: boolean) {
+  if (!event) {
+    return hasTextMaterial ? "我会先读产品介绍，再查证据。" : "我会先读产品介绍，再查证据。";
+  }
+  if (event.stage === "intake") return "我已收到产品介绍。";
+  if (event.stage === "material_reader" && event.status === "failed") {
+    return "信息还不够，我会先问你补齐关键内容。";
+  }
+  if (event.stage === "material_reader") return "我正在先快速读一遍产品介绍。";
+  if (event.stage === "web_research") return "材料够了，我正在查公开证据。";
+  if (event.stage === "evidence_agent") return "我正在整理支持证据和风险。";
+  if (event.stage === "report_composer") return "我正在写潜力判断。";
+  if (event.stage === "quality_gate") return "我正在做最后检查。";
+  return event.summary || "我正在处理。";
 }
 
 const liveStageConfig: Array<{
