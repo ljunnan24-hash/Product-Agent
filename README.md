@@ -1,10 +1,12 @@
-# Product Agent MVP
+# Product Agent
 
 Product Agent 是一个本地优先的产品分析 Agent：上传 README/PDF/截图/CSV/JSON 或粘贴 GitHub repo URL 后，它会读取材料、搜索证据、判断产品潜力，并生成带证据边界的报告。
 
+![Product Agent local beta home](docs/assets/local-beta-home.png)
+
 ## Local Beta v0.1
 
-这一阶段默认不需要数据库和服务器，适合先让朋友、本地用户或 GitHub 访客 clone 后试用。
+这一阶段默认不需要数据库和服务器，适合先让朋友、本地用户或 GitHub 访客 clone 后试用。设计参考了优秀开发者工具的首次使用体验：启动路径要短、状态要可见、示例要能马上跑。
 
 快速启动：
 
@@ -20,6 +22,15 @@ pnpm local
 打开首页后会看到 Local Beta 状态面板，里面会展示 `pnpm doctor` 的结果，包括依赖、环境变量、Docker、worker daemon 和 durable queue。没有 blocker 时可以直接上传材料或粘贴 GitHub repo URL 开始分析。
 
 第一次试用可以点击首页对话里的 `载入示例`。它会填入 `examples/local-beta-demo` 的 SignalShelf 样例材料，包括产品 README、访谈记录和早期渠道数据，适合快速生成第一份报告。
+
+这版包含：
+
+- 单入口产品分析：材料读取、网页证据、Judge、报告和质量审计。
+- 本地 durable queue / replay / worker drain。
+- Local Beta 状态面板和 `pnpm doctor` 环境体检。
+- 受限代码执行，生产/强隔离模式只允许 Docker no-network。
+- Memory v1 和局部刷新 v2。
+- 内置 Demo 样例包。
 
 常见状态：
 
