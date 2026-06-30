@@ -3,7 +3,7 @@ import {
   appendCalibrationTraceStep,
   loadProductAnalysisCalibrationContext
 } from "./analysis-calibration";
-import { modelName } from "./deepseek";
+import { generateMaterialIntakeReview, modelName } from "./deepseek";
 import { generateEvidenceBrief } from "./evidence-agent";
 import { runJudgeAgent } from "./agent-judge";
 import { AgentRuntimeHarness } from "./agent-runtime";
@@ -155,7 +155,15 @@ export async function runAnalysisFromFormData(
     emit
   });
   const { materials, githubEvidence, githubWarnings } = materialRead;
-  const readiness = assessMaterialReadiness({
+
+  await emit({
+    stage: "material_reader",
+    status: "running",
+    title: "快速浏览材料",
+    summary: "先判断信息是否足够开始深入调研。"
+  });
+
+  const readiness = await assessMaterialReadiness({
     brief,
     materials,
     githubRepoUrls,
@@ -511,7 +519,7 @@ function parseMetrics(raw: string): ImageMetrics | null {
   return null;
 }
 
-function assessMaterialReadiness({
+async function assessMaterialReadiness({
   brief,
   materials,
   githubRepoUrls,
@@ -521,7 +529,7 @@ function assessMaterialReadiness({
   materials: UploadedMaterial[];
   githubRepoUrls: string[];
   githubWarnings: string[];
-}): MaterialReadiness {
+}): Promise<MaterialReadiness> {
   const text = normalizeReadinessText(
     [
       brief,
@@ -538,6 +546,46 @@ function assessMaterialReadiness({
   );
   const hasImportedRepo = githubRepoUrls.length > 0 && hasReadableMaterial;
   const missing = missingMaterialBasics(text);
+
+  const obviousTooThin = charCount < 8 && !hasImportedRepo;
+  if (!obviousTooThin) {
+    const modelReview = await generateMaterialIntakeReview({
+      brief,
+      materials
+    });
+    if (modelReview) {
+      if (modelReview.ready) {
+        return {
+          ready: true,
+          summary: modelReview.summary || "材料已经够开始深入调研。"
+        };
+      }
+
+      const needs = modelReview.missing.length
+        ? modelReview.missing.slice(0, 3)
+        : missing.slice(0, 3);
+      const issue =
+        modelReview.summary || "我先浏览了一遍，还需要补充一点关键信息。";
+      const question =
+        modelReview.question ||
+        (needs.length
+          ? `请补充：${needs.join("、")}。`
+          : "请补充产品是什么、给谁用、解决什么问题。");
+      const message = `${issue} ${question}`;
+
+      return {
+        ready: false,
+        summary: issue,
+        detail: [
+          needs.length ? `建议补充：${needs.join("、")}。` : question,
+          githubWarnings.length ? `读取提示：${githubWarnings.join("；")}` : ""
+        ]
+          .filter(Boolean)
+          .join(" "),
+        message
+      };
+    }
+  }
 
   if (
     hasImportedRepo ||

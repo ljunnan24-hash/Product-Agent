@@ -42,6 +42,21 @@ type ReportModelConfig = {
   missingKeyMessage: string;
 };
 
+export type MaterialIntakeReviewInput = {
+  brief: string;
+  materials: UploadedMaterial[];
+};
+
+export type MaterialIntakeReview = {
+  ready: boolean;
+  missing: string[];
+  question: string;
+  summary: string;
+  reason: string;
+  confidence: "low" | "medium" | "high";
+  model: string;
+};
+
 export async function generateProductDiagnosisReport(
   input: GenerateReportInput
 ): Promise<ProductDiagnosisReport> {
@@ -103,6 +118,39 @@ export function modelName() {
   return `${config.provider}/${config.model}`;
 }
 
+export async function generateMaterialIntakeReview(
+  input: MaterialIntakeReviewInput
+): Promise<MaterialIntakeReview | null> {
+  const config = resolveReportModelConfig();
+  if (!config.apiKey) return null;
+
+  const prompt = buildMaterialIntakePrompt(input);
+
+  try {
+    const response = await fetch(config.endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(buildMaterialIntakeChatCompletionBody(config, prompt)),
+      cache: "no-store"
+    });
+
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const content = payload.choices?.[0]?.message?.content;
+    if (!content) return null;
+
+    return normalizeMaterialIntakeReview(parseJsonObject(content), modelName());
+  } catch {
+    return null;
+  }
+}
+
 export const generateTasteReport = generateProductDiagnosisReport;
 
 function resolveReportModelConfig(): ReportModelConfig {
@@ -156,9 +204,110 @@ function buildChatCompletionBody(config: ReportModelConfig, prompt: string) {
   };
 }
 
+function buildMaterialIntakeChatCompletionBody(
+  config: ReportModelConfig,
+  prompt: string
+) {
+  return {
+    model: config.model,
+    messages: [
+      {
+        role: "system",
+        content:
+          "You are Product Agent's intake reviewer. Return only valid json. Decide only whether the provided product materials are enough to begin deep research. Do not score product potential, do not write a report, and do not ask for a form."
+      },
+      {
+        role: "user",
+        content: prompt
+      }
+    ],
+    thinking: { type: "disabled" },
+    temperature: 0.1,
+    max_tokens: 900,
+    response_format: { type: "json_object" }
+  };
+}
+
 function providerName(provider: ReportModelProvider) {
   if (provider === "zhipu") return "Zhipu";
   return "DeepSeek";
+}
+
+function buildMaterialIntakePrompt(input: MaterialIntakeReviewInput) {
+  return `
+You are the first-pass intake reviewer for Product Agent.
+
+Goal:
+- Decide whether the user's uploaded/pasted product materials contain enough information to begin deep product-potential research.
+- Do not judge product potential yet.
+- Do not ask for a form. If information is missing, ask one natural follow-up question in Simplified Chinese.
+
+Start deep research when the material is enough to infer:
+- What the product is or roughly does.
+- Who it is for or at least the likely user segment.
+- What problem/job/pain it addresses.
+- Enough concrete nouns/terms to search for alternatives, demand, or evidence.
+
+Ask for more information only when deep research would be mostly generic, for example:
+- The user only says "帮我看看有没有潜力".
+- The material is only a slogan/name with no product behavior.
+- There is no inferable target user and no problem/job.
+- The uploaded material has no readable text and the brief does not explain the product.
+
+Be forgiving:
+- If the product, user, and problem can be reasonably inferred, mark ready=true even if proof, pricing, traction, screenshots, or links are missing.
+- Missing traction or market evidence should not block intake; later research will check that.
+
+User brief:
+${input.brief || "Not supplied."}
+
+Material summaries:
+${formatMaterials(input.materials)}
+
+Return only valid JSON:
+{
+  "ready": true or false,
+  "missing": ["0-3 concise missing items in Simplified Chinese"],
+  "question": "one short natural follow-up question in Simplified Chinese; empty string if ready",
+  "summary": "one short status sentence in Simplified Chinese",
+  "reason": "one concise internal reason in Simplified Chinese",
+  "confidence": "low" | "medium" | "high"
+}
+`;
+}
+
+function normalizeMaterialIntakeReview(
+  value: unknown,
+  model: string
+): MaterialIntakeReview | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const ready = record.ready === true;
+  const missing = Array.isArray(record.missing)
+    ? record.missing.filter((item): item is string => typeof item === "string").slice(0, 3)
+    : [];
+  const confidence =
+    record.confidence === "high" || record.confidence === "medium" || record.confidence === "low"
+      ? record.confidence
+      : "medium";
+  const question = typeof record.question === "string" ? record.question.trim() : "";
+  const summary =
+    typeof record.summary === "string" && record.summary.trim()
+      ? record.summary.trim()
+      : ready
+        ? "材料已经够开始深入调研。"
+        : "我先浏览了一遍，还需要补充一点关键信息。";
+  const reason = typeof record.reason === "string" ? record.reason.trim() : "";
+
+  return {
+    ready,
+    missing,
+    question,
+    summary,
+    reason,
+    confidence,
+    model
+  };
 }
 
 function buildPrompt(input: GenerateReportInput) {
