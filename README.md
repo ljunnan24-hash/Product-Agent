@@ -4,8 +4,7 @@
 
 ```bash
 pnpm install --registry=https://registry.npmmirror.com
-pnpm doctor
-pnpm dev
+pnpm local
 ```
 
 访问：
@@ -35,6 +34,15 @@ CODE_EXECUTOR_REQUIRE_STRONG_SANDBOX=0 # 可选；设为 1 时即使非 producti
 pnpm doctor        # 检查 Node/pnpm、env、搜索/模型 key、Docker、daemon、durable queue
 pnpm doctor --json # 输出 JSON，方便接安装脚本或 CI
 ```
+
+分开启动：
+
+```bash
+pnpm dev
+pnpm worker:local-drain -- --watch
+```
+
+`pnpm local` 默认会先运行 `pnpm doctor`，然后同时启动 Next dev server 和本地 worker drain；如果只想启动页面，可以运行 `pnpm local -- --no-worker`。
 
 第一版采用本地 JSON 存储：
 
