@@ -23,6 +23,8 @@ pnpm local
 
 第一次试用可以点击首页对话里的 `载入示例`。它会填入 `examples/local-beta-demo` 的 SignalShelf 样例材料，包括产品 README、访谈记录和早期渠道数据，适合快速生成第一份报告。
 
+试用后欢迎直接在 [Local Beta feedback thread](https://github.com/ljunnan24-hash/Product-Agent/issues/1) 留言。短评论就可以；如果方便，最好带上：分析的产品类型、demo 是否跑通、自己的材料是否跑通、卡住的步骤、报告里最有用或最没用的一点，以及本地环境。
+
 这版包含：
 
 - 单入口产品分析：材料读取、网页证据、Judge、报告和质量审计。
