@@ -25,6 +25,7 @@ body {
 
 body {
   margin: 0;
+  overflow-x: hidden;
   background: var(--paper);
   color: var(--ink);
   font-family:
@@ -113,28 +114,26 @@ a {
 
 .conversation-mode {
   display: block;
-  width: min(1120px, 100%);
+  width: min(820px, 100%);
   margin: 0 auto;
 }
 
 .product-intake-hero {
   display: grid;
   gap: 8px;
-  width: min(860px, 100%);
-  margin: 12px 0 18px;
-}
-
-.product-intake-hero span {
-  color: #496b9a;
-  font-size: 12px;
-  font-weight: 840;
+  justify-items: center;
+  width: min(760px, 100%);
+  max-width: 100%;
+  margin: 34px auto 20px;
+  text-align: center;
 }
 
 .product-intake-hero h1 {
-  max-width: 780px;
+  width: 100%;
+  max-width: 720px;
   margin: 0;
   color: #111318;
-  font-size: 34px;
+  font-size: 40px;
   line-height: 1.08;
   letter-spacing: 0;
   overflow-wrap: anywhere;
@@ -144,20 +143,9 @@ a {
   max-width: 720px;
   margin: 0;
   color: #5f6b78;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.6;
   overflow-wrap: anywhere;
-}
-
-.product-start-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 330px;
-  gap: 18px;
-  align-items: start;
-}
-
-.product-start-main {
-  min-width: 0;
 }
 
 .local-beta-panel {
@@ -372,7 +360,7 @@ a {
 }
 
 .conversation-console {
-  min-height: min(650px, calc(100vh - 220px));
+  min-height: min(680px, calc(100vh - 210px));
   padding: 0;
   overflow: hidden;
   border: 0;
@@ -388,101 +376,9 @@ a {
 }
 
 .conversation-thread {
-  min-height: 260px;
-  padding: 20px 8px 18px;
+  min-height: 300px;
+  padding: 24px 8px 20px;
   overflow-y: auto;
-}
-
-.report-preview-panel {
-  display: grid;
-  gap: 14px;
-  min-width: 0;
-  padding: 16px;
-  border: 1px solid #cfd8e6;
-  border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 18px 50px rgba(35, 43, 55, 0.1);
-}
-
-.preview-header {
-  display: grid;
-  gap: 3px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.preview-header span,
-.preview-score-row span,
-.preview-line span,
-.preview-footer span {
-  color: #66717f;
-  font-size: 11px;
-  font-weight: 820;
-}
-
-.preview-header strong {
-  color: #111318;
-  font-size: 20px;
-}
-
-.preview-score-row {
-  display: grid;
-  grid-template-columns: 88px minmax(0, 1fr);
-  gap: 1px;
-  border: 1px solid #d8dfea;
-  background: #d8dfea;
-}
-
-.preview-score-row div {
-  min-width: 0;
-  padding: 10px;
-  background: #f8fafc;
-}
-
-.preview-score-row strong {
-  display: block;
-  margin-top: 4px;
-  color: #111318;
-  font-size: 24px;
-  line-height: 1;
-}
-
-.preview-score-row div:last-child strong {
-  font-size: 17px;
-  line-height: 1.2;
-}
-
-.preview-evidence-list {
-  display: grid;
-  border-top: 1px solid #e2e8f0;
-}
-
-.preview-line {
-  display: grid;
-  gap: 4px;
-  padding: 11px 0;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.preview-line p {
-  margin: 0;
-  color: #2f3845;
-  font-size: 13px;
-  line-height: 1.55;
-}
-
-.preview-footer {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-}
-
-.preview-footer span {
-  min-height: 26px;
-  padding: 5px 7px;
-  border: 1px solid #d8dfea;
-  background: #fbfcfe;
-  color: #425064;
 }
 
 .chat-message {
@@ -532,6 +428,7 @@ a {
 }
 
 .message-bubble {
+  min-width: 0;
   max-width: 720px;
   padding: 14px 16px;
   border: 1px solid var(--line);
@@ -7035,8 +6932,25 @@ textarea:focus {
 
   .product-intake-hero h1 {
     max-width: calc(100vw - 20px);
-    font-size: 26px;
+    font-size: 24px;
+    text-align: left;
     word-break: break-all;
+  }
+
+  .product-intake-hero,
+  .product-intake-hero p,
+  .message-bubble,
+  .message-bubble p,
+  .composer-box,
+  .repo-url-row,
+  .composer-box textarea {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .product-intake-hero {
+    justify-items: start;
+    text-align: left;
   }
 
   .product-start-grid,
@@ -7049,9 +6963,11 @@ textarea:focus {
   }
 
   .product-intake-hero p,
+  .message-bubble p,
   .local-beta-check p,
   .local-beta-check small {
-    word-break: break-word;
+    overflow-wrap: anywhere;
+    word-break: break-all;
   }
 
   .local-beta-check small {
