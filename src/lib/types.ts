@@ -1662,6 +1662,7 @@ export type StoredRunEvent = {
   title?: string;
   summary?: string;
   detail?: string;
+  metadata?: Record<string, unknown>;
   message?: string;
   model?: string;
   at: string;

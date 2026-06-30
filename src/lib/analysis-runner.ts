@@ -65,6 +65,7 @@ export type AnalysisRunEvent = {
   title: string;
   summary: string;
   detail?: string;
+  metadata?: Record<string, unknown>;
   id?: string;
 };
 
@@ -87,6 +88,21 @@ type MaterialReadiness = {
   summary: string;
   detail?: string;
   message?: string;
+  reviewLog: MaterialIntakeReviewLog;
+};
+
+type MaterialIntakeReviewLog = {
+  source: "model" | "fallback";
+  ready: boolean;
+  missing: string[];
+  question?: string;
+  summary: string;
+  reason?: string;
+  confidence?: "low" | "medium" | "high";
+  model?: string;
+  textCharCount: number;
+  materialCount: number;
+  githubRepoCount: number;
 };
 
 export class AnalysisRequestError extends Error {
@@ -179,7 +195,10 @@ export async function runAnalysisFromFormData(
     status: "completed",
     title: "材料读完",
     summary: `完成 ${materials.length} 份材料，抽取 ${extractedUrlCount} 个公开链接。`,
-    detail: [readiness.summary, githubWarnings.join("；")].filter(Boolean).join("；") || undefined
+    detail: [readiness.summary, githubWarnings.join("；")].filter(Boolean).join("；") || undefined,
+    metadata: {
+      intakeReview: readiness.reviewLog
+    }
   });
 
   if (!readiness.ready) {
@@ -557,7 +576,20 @@ async function assessMaterialReadiness({
       if (modelReview.ready) {
         return {
           ready: true,
-          summary: modelReview.summary || "材料已经够开始深入调研。"
+          summary: modelReview.summary || "材料已经够开始深入调研。",
+          reviewLog: {
+            source: "model",
+            ready: true,
+            missing: modelReview.missing,
+            question: modelReview.question || undefined,
+            summary: modelReview.summary,
+            reason: modelReview.reason || undefined,
+            confidence: modelReview.confidence,
+            model: modelReview.model,
+            textCharCount: charCount,
+            materialCount: materials.length,
+            githubRepoCount: githubRepoUrls.length
+          }
         };
       }
 
@@ -582,7 +614,20 @@ async function assessMaterialReadiness({
         ]
           .filter(Boolean)
           .join(" "),
-        message
+        message,
+        reviewLog: {
+          source: "model",
+          ready: false,
+          missing: needs,
+          question,
+          summary: issue,
+          reason: modelReview.reason || undefined,
+          confidence: modelReview.confidence,
+          model: modelReview.model,
+          textCharCount: charCount,
+          materialCount: materials.length,
+          githubRepoCount: githubRepoUrls.length
+        }
       };
     }
   }
@@ -594,7 +639,17 @@ async function assessMaterialReadiness({
   ) {
     return {
       ready: true,
-      summary: "材料已经够我先判断基本假设，开始深入调研。"
+      summary: "材料已经够我先判断基本假设，开始深入调研。",
+      reviewLog: {
+        source: "fallback",
+        ready: true,
+        missing: missing.slice(0, 3),
+        summary: "材料已经够我先判断基本假设，开始深入调研。",
+        reason: "模型 intake review 不可用，使用本地兜底规则。",
+        textCharCount: charCount,
+        materialCount: materials.length,
+        githubRepoCount: githubRepoUrls.length
+      }
     };
   }
 
@@ -616,7 +671,18 @@ async function assessMaterialReadiness({
     ]
       .filter(Boolean)
       .join(" "),
-    message
+    message,
+    reviewLog: {
+      source: "fallback",
+      ready: false,
+      missing: needs,
+      question: `请补充：${needs.join("、")}。`,
+      summary: issue,
+      reason: "模型 intake review 不可用或输入明显过短，使用本地兜底规则。",
+      textCharCount: charCount,
+      materialCount: materials.length,
+      githubRepoCount: githubRepoUrls.length
+    }
   };
 }
 
