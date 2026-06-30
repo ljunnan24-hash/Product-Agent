@@ -451,6 +451,22 @@ a {
   color: #d7dce4;
 }
 
+.agent-follow-up {
+  max-width: 720px;
+  padding: 14px 16px;
+  border: 1px solid #d8e2ef;
+  background: #f8fafc;
+}
+
+.agent-follow-up strong {
+  display: block;
+  color: var(--ink);
+}
+
+.agent-follow-up p {
+  margin-top: 6px;
+}
+
 .starter-materials {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

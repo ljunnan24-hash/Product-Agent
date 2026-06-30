@@ -51,6 +51,7 @@ type LiveRunEvent = {
 type StreamPayload = Partial<LiveRunEvent> & {
   type?: "progress" | "complete" | "error";
   message?: string;
+  status?: number;
   id?: string;
   analysisId?: string;
   runId?: string;
@@ -84,12 +85,24 @@ type Props = {
 const sampleBrief =
   "";
 
+class StreamAnalysisError extends Error {
+  status?: number;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 export function ChatAgentEntry({ variant }: Props) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [brief, setBrief] = useState(sampleBrief);
   const [materials, setMaterials] = useState<MaterialDraft[]>([]);
   const [error, setError] = useState("");
+  const [followUpPrompt, setFollowUpPrompt] = useState("");
+  const [submittedBrief, setSubmittedBrief] = useState("");
+  const [submittedMaterialNames, setSubmittedMaterialNames] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [runEvents, setRunEvents] = useState<LiveRunEvent[]>([]);
   const [resumedRun, setResumedRun] = useState<ResumedRunState | null>(null);
@@ -114,6 +127,7 @@ export function ChatAgentEntry({ variant }: Props) {
     if (!fileList) return;
 
     setError("");
+    setFollowUpPrompt("");
     const incoming = [...fileList].slice(0, 6 - materials.length);
     const nextMaterials: MaterialDraft[] = [];
 
@@ -144,6 +158,7 @@ export function ChatAgentEntry({ variant }: Props) {
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+    setFollowUpPrompt("");
 
     if (materials.length === 0 && !brief.trim()) {
       setError("先上传或粘贴产品介绍。");
@@ -158,6 +173,8 @@ export function ChatAgentEntry({ variant }: Props) {
       materials
     });
 
+    setSubmittedBrief(brief.trim());
+    setSubmittedMaterialNames(materials.map((material) => material.file.name || "产品介绍"));
     await startAnalysis(body);
   }
 
@@ -180,7 +197,13 @@ export function ChatAgentEntry({ variant }: Props) {
 
       router.push(`/analysis/${analysisId}`);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "分析失败");
+      const message = submitError instanceof Error ? submitError.message : "分析失败";
+      if (submitError instanceof StreamAnalysisError && submitError.status === 422) {
+        setFollowUpPrompt(message);
+        setError("");
+      } else {
+        setError(message);
+      }
       setRunEvents((current) => {
         if (current.some((event) => event.status === "failed")) return current;
         return [
@@ -243,6 +266,9 @@ export function ChatAgentEntry({ variant }: Props) {
           metrics: null
         }))
       );
+      setFollowUpPrompt("");
+      setSubmittedBrief("");
+      setSubmittedMaterialNames([]);
       setRunEvents([]);
       setResumedRun(null);
     } catch (loadError) {
@@ -271,25 +297,38 @@ export function ChatAgentEntry({ variant }: Props) {
               </button>
             </div>
           </Message>
-          {materials.length > 0 ? (
+          {submittedBrief || submittedMaterialNames.length > 0 ? (
             <Message role="user">
-              <strong>已上传 {materials.length} 份产品介绍。</strong>
-              <p>{brief || "请判断产品潜力。"}</p>
-              <div className="user-material-list">
-                {materials.map((material, index) => (
-                  <span key={`${material.file.name}-${index}`}>{material.file.name}</span>
-                ))}
-              </div>
+              <strong>
+                {submittedMaterialNames.length
+                  ? `已上传 ${submittedMaterialNames.length} 份产品介绍。`
+                  : "我想分析这个产品。"}
+              </strong>
+              {submittedBrief ? <p>{submittedBrief}</p> : <p>请判断产品潜力。</p>}
+              {submittedMaterialNames.length ? (
+                <div className="user-material-list">
+                  {submittedMaterialNames.map((name, index) => (
+                    <span key={`${name}-${index}`}>{name}</span>
+                  ))}
+                </div>
+              ) : null}
             </Message>
           ) : null}
-          {materials.length > 0 ? (
+          {submittedBrief || submittedMaterialNames.length > 0 ? (
             <Message role="agent">
-              <p>收到。我会先读产品介绍，再查证据，最后给潜力判断和下一步。</p>
+              {followUpPrompt ? (
+                <div className="agent-follow-up">
+                  <strong>我先看了一遍，还需要一点信息。</strong>
+                  <p>{followUpPrompt}</p>
+                </div>
+              ) : (
+                <p>收到。我会先读产品介绍，再查证据，最后给潜力判断和下一步。</p>
+              )}
               <LiveReasoningPanel
-                hasMaterials={materials.length > 0}
+                hasMaterials={Boolean(submittedBrief || submittedMaterialNames.length)}
                 isSubmitting={isSubmitting}
                 hasTextMaterial={
-                  materials.some((material) => isTextFile(material.file))
+                  Boolean(submittedBrief) || materials.some((material) => isTextFile(material.file))
                 }
                 events={runEvents}
               />
@@ -483,6 +522,9 @@ export function ChatAgentEntry({ variant }: Props) {
   function clearResumedRun() {
     if (resumedRun?.id) forgetRunId(resumedRun.id);
     setResumedRun(null);
+    setSubmittedBrief("");
+    setSubmittedMaterialNames([]);
+    setFollowUpPrompt("");
     setRunEvents([]);
   }
 }
@@ -595,7 +637,10 @@ async function runStreamingAnalysis(
       rememberRunId(payload.runId);
 
       if (payload.type === "error") {
-        throw new Error(payload.message || "分析失败，请稍后再试。");
+        throw new StreamAnalysisError(
+          payload.message || "分析失败，请稍后再试。",
+          payload.status
+        );
       }
 
       if (payload.type === "complete" && (payload.analysisId || payload.id)) {
@@ -611,6 +656,12 @@ async function runStreamingAnalysis(
   if (buffer.trim()) {
     const payload = parseStreamPayload(buffer);
     rememberRunId(payload?.runId);
+    if (payload?.type === "error") {
+      throw new StreamAnalysisError(
+        payload.message || "分析失败，请稍后再试。",
+        payload.status
+      );
+    }
     if (payload?.type === "complete" && (payload.analysisId || payload.id)) {
       analysisId = payload.analysisId || payload.id || "";
     } else {
