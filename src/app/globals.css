@@ -3477,6 +3477,61 @@ textarea:focus {
   font-size: 22px;
 }
 
+.harness-debug-details {
+  border: 1px solid var(--line);
+  background: #ffffff;
+}
+
+.harness-debug-details > summary {
+  display: grid;
+  gap: 4px;
+  cursor: pointer;
+  padding: 12px;
+  color: var(--muted);
+  list-style: none;
+}
+
+.harness-debug-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.harness-debug-details > summary span {
+  font-size: 11px;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.harness-debug-details > summary strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.harness-debug-details > summary::after {
+  content: "展开";
+  justify-self: start;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.harness-debug-details[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.harness-debug-details[open] > summary::after {
+  content: "收起";
+}
+
+.harness-debug-details:not([open]) .harness-debug-body {
+  display: none;
+}
+
+.harness-debug-body {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+
 .harness-section {
   padding: 12px;
   border: 1px solid var(--line);

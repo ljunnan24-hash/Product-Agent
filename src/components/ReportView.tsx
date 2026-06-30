@@ -1148,17 +1148,15 @@ function HarnessPanel({
   }
 
   return (
-    <aside className="run-panel harness-panel" aria-label="Agent visible reasoning harness">
+    <aside className="run-panel harness-panel" aria-label="继续追问和分析过程">
       <div className="agent-identity">
         <span>
           <Bot size={18} />
         </span>
         <div>
-          <strong>可见思考过程</strong>
+          <strong>继续追问</strong>
           <small>
-            {record.model} ·{" "}
-            {webResearch?.searchProvider ? `${searchProviderLabel(webResearch.searchProvider)}检索 · ` : ""}
-            证据化推理
+            基于这份报告继续补材料、问下一步。
           </small>
         </div>
       </div>
@@ -1272,13 +1270,18 @@ function HarnessPanel({
             />
             <button
               type="button"
+              aria-label="补充材料"
               onClick={() => followUpInputRef.current?.click()}
             >
               <Paperclip size={14} />
               补材料
             </button>
             <div />
-            <button type="submit" disabled={isSendingFollowUp}>
+            <button
+              type="submit"
+              aria-label={isSendingFollowUp ? "正在发送追问" : "发送追问"}
+              disabled={isSendingFollowUp}
+            >
               {isSendingFollowUp ? <Loader2 className="spin" size={15} /> : <ArrowUp size={15} />}
             </button>
           </div>
@@ -1360,6 +1363,12 @@ function HarnessPanel({
         {followUpError ? <p className="form-error">{followUpError}</p> : null}
       </section>
 
+      <details className="harness-debug-details">
+        <summary>
+          <span>分析过程与调试信息</span>
+          <strong>证据、校准和运行账本</strong>
+        </summary>
+        <div className="harness-debug-body">
       {record.calibrationContext ? (
         <section className="harness-section calibration-context-section">
           <h2>校准规则</h2>
@@ -2237,6 +2246,8 @@ function HarnessPanel({
           </>
         )}
       </div>
+        </div>
+      </details>
 
       <div className="run-note">
         <span>Created</span>
