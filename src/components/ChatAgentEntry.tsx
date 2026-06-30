@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   CircleDashed,
   FileImage,
-  Github,
   ListChecks,
   Loader2,
   Paperclip,
@@ -89,7 +88,6 @@ export function ChatAgentEntry({ variant }: Props) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [brief, setBrief] = useState(sampleBrief);
-  const [githubRepoUrl, setGithubRepoUrl] = useState("");
   const [materials, setMaterials] = useState<MaterialDraft[]>([]);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -123,12 +121,12 @@ export function ChatAgentEntry({ variant }: Props) {
       if (
         !isAllowedMaterial(file)
       ) {
-        setError("支持 README/MD、TXT、PDF、PNG、JPG、WebP。");
+        setError("这个文件暂时不能读取，请换一份产品介绍。");
         continue;
       }
 
       if (file.size > 12 * 1024 * 1024) {
-        setError("单个材料请压缩到 12MB 以内。");
+        setError("单个文件请压缩到 12MB 以内。");
         continue;
       }
 
@@ -147,9 +145,8 @@ export function ChatAgentEntry({ variant }: Props) {
     event.preventDefault();
     setError("");
 
-    const trimmedGithubRepoUrl = githubRepoUrl.trim();
-    if (materials.length === 0 && !trimmedGithubRepoUrl) {
-      setError("先上传产品材料，或粘贴一个 GitHub repo URL。");
+    if (materials.length === 0 && !brief.trim()) {
+      setError("先上传或粘贴产品介绍。");
       return;
     }
 
@@ -157,7 +154,7 @@ export function ChatAgentEntry({ variant }: Props) {
       productVariant: variant.id,
       brief,
       imageMetrics: primaryMetrics,
-      githubRepoUrl: trimmedGithubRepoUrl,
+      githubRepoUrl: "",
       materials
     });
 
@@ -171,8 +168,8 @@ export function ChatAgentEntry({ variant }: Props) {
       {
         stage: "intake",
         status: "running",
-        title: "准备开始",
-        summary: "材料已放入运行队列。"
+          title: "准备开始",
+          summary: "产品介绍已收到。"
       }
     ]);
 
@@ -203,11 +200,10 @@ export function ChatAgentEntry({ variant }: Props) {
     if (!retryInput) return;
 
     setBrief(retryInput.brief);
-    setGithubRepoUrl(retryInput.githubRepoUrl || "");
     setMaterials([]);
 
     if (!retryInput.canAutoPrefill || !retryInput.githubRepoUrl) {
-      setError(retryInput.limitation || "请重新上传材料后重试。");
+      setError(retryInput.limitation || "请重新上传产品介绍后重试。");
       inputRef.current?.click();
       return;
     }
@@ -217,7 +213,7 @@ export function ChatAgentEntry({ variant }: Props) {
       productVariant: retryInput.productVariant,
       brief: retryInput.brief,
       imageMetrics: null,
-      githubRepoUrl: retryInput.githubRepoUrl,
+      githubRepoUrl: "",
       materials: []
     });
     await startAnalysis(body);
@@ -232,10 +228,9 @@ export function ChatAgentEntry({ variant }: Props) {
       });
       const payload = (await response.json()) as DemoExamplePayload;
       if (!response.ok) {
-        throw new Error("示例材料读取失败");
+        throw new Error("示例产品介绍读取失败");
       }
       setBrief(payload.brief || "");
-      setGithubRepoUrl(payload.githubRepoUrl || "");
       setMaterials(
         payload.materials.slice(0, 6).map((material) => ({
           file: new File([material.content], material.name, {
@@ -248,7 +243,7 @@ export function ChatAgentEntry({ variant }: Props) {
       setRunEvents([]);
       setResumedRun(null);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "示例材料读取失败");
+      setError(loadError instanceof Error ? loadError.message : "示例产品介绍读取失败");
     } finally {
       setIsLoadingExample(false);
     }
@@ -258,46 +253,39 @@ export function ChatAgentEntry({ variant }: Props) {
     <main className="chat-agent-layout conversation-mode">
       <section className="product-intake-hero">
         <h1>上传产品介绍</h1>
-        <p>我来读材料、查证据，判断这个产品有没有潜力。</p>
+        <p>我来判断这个产品有没有潜力。</p>
       </section>
 
       <form className="chat-console conversation-console" onSubmit={onSubmit}>
         <div className="chat-history conversation-thread" aria-label="Product Agent conversation">
           <Message role="agent">
             <strong>把产品介绍发给我。</strong>
-            <p>上传文件，或粘贴一个链接。</p>
+            <p>上传文件，或直接粘贴产品介绍。</p>
             <div className="demo-example-action">
               <button type="button" onClick={loadDemoExample} disabled={isLoadingExample}>
                 {isLoadingExample ? <Loader2 className="spin" size={16} /> : <Wand2 size={16} />}
                 载入示例
               </button>
-              <small>没有材料时，可以先用内置样例体验。</small>
             </div>
           </Message>
-          {materials.length > 0 || githubRepoUrl.trim() ? (
+          {materials.length > 0 ? (
             <Message role="user">
-              <strong>
-                {materials.length > 0 ? `已上传 ${materials.length} 份材料。` : "已提供 GitHub repo。"}
-              </strong>
+              <strong>已上传 {materials.length} 份产品介绍。</strong>
               <p>{brief || "请判断产品潜力。"}</p>
-              {materials.length > 0 || githubRepoUrl.trim() ? (
-                <div className="user-material-list">
-                  {materials.map((material, index) => (
-                    <span key={`${material.file.name}-${index}`}>{material.file.name}</span>
-                  ))}
-                  {githubRepoUrl.trim() ? <span>{githubRepoUrl.trim()}</span> : null}
-                </div>
-              ) : null}
+              <div className="user-material-list">
+                {materials.map((material, index) => (
+                  <span key={`${material.file.name}-${index}`}>{material.file.name}</span>
+                ))}
+              </div>
             </Message>
           ) : null}
-          {materials.length > 0 || githubRepoUrl.trim() ? (
+          {materials.length > 0 ? (
             <Message role="agent">
-              <p>收到。我会先读材料和 GitHub，再查公开信息，最后给潜力判断和下一步。</p>
+              <p>收到。我会先读产品介绍，再查证据，最后给潜力判断和下一步。</p>
               <LiveReasoningPanel
-                hasMaterials={materials.length > 0 || Boolean(githubRepoUrl.trim())}
+                hasMaterials={materials.length > 0}
                 isSubmitting={isSubmitting}
                 hasTextMaterial={
-                  Boolean(githubRepoUrl.trim()) ||
                   materials.some((material) => isTextFile(material.file))
                 }
                 events={runEvents}
@@ -412,17 +400,9 @@ export function ChatAgentEntry({ variant }: Props) {
           <textarea
             value={brief}
             onChange={(event) => setBrief(event.target.value)}
-            placeholder="补充一句目标，例如：判断这个产品有没有潜力。"
+            placeholder="粘贴产品介绍，或补充一句你想判断的问题。"
             rows={5}
           />
-          <div className="repo-url-row">
-            <Github size={16} />
-            <input
-              value={githubRepoUrl}
-              onChange={(event) => setGithubRepoUrl(event.target.value)}
-              placeholder="https://github.com/owner/repo"
-            />
-          </div>
 
           <div className="composer-actions">
             <input
@@ -438,7 +418,7 @@ export function ChatAgentEntry({ variant }: Props) {
               onClick={() => inputRef.current?.click()}
             >
               <Paperclip size={17} />
-              上传材料
+              上传产品介绍
             </button>
 
             <div className="composer-spacer" />
@@ -876,7 +856,7 @@ function LiveReasoningPanel({
           <span>运行过程</span>
           <strong>
             {latestEvent?.title ||
-              (isSubmitting ? "启动中" : hasMaterials ? "准备好了" : "等待材料")}
+              (isSubmitting ? "启动中" : hasMaterials ? "准备好了" : "等待产品介绍")}
           </strong>
         </div>
         <small>{isSubmitting ? "执行到哪里会实时更新" : "开始后逐步展开"}</small>
@@ -886,8 +866,8 @@ function LiveReasoningPanel({
         <p>
           {latestEvent?.summary ||
             (hasTextMaterial
-              ? "我会先读 README/PDF，再查证据。"
-              : "我会先读取材料，再查证据。")}
+              ? "我会先读产品介绍，再查证据。"
+              : "我会先读产品介绍，再查证据。")}
         </p>
       </div>
       <div className="live-stage-list">
@@ -931,13 +911,13 @@ const liveStageConfig: Array<{
     id: "intake",
     icon: Paperclip,
     title: "接收",
-    body: "检查材料数量、类型和大小。"
+    body: "检查产品介绍是否可读取。"
   },
   {
     id: "material_reader",
     icon: FileImage,
-    title: "读材料",
-    body: "抽取 README、PDF、TXT 和截图信息。"
+    title: "读介绍",
+    body: "理解产品、用户和当前问题。"
   },
   {
     id: "web_research",
@@ -949,7 +929,7 @@ const liveStageConfig: Array<{
     id: "evidence_agent",
     icon: ListChecks,
     title: "建账本",
-    body: "归一证据卡，检查 Source Budget。"
+    body: "整理支持证据和风险。"
   },
   {
     id: "report_composer",

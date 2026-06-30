@@ -1,6 +1,6 @@
 # Product Agent
 
-Product Agent 是一个本地优先的产品分析 Agent：上传 README/PDF/截图/CSV/JSON 或粘贴 GitHub repo URL 后，它会读取材料、搜索证据、判断产品潜力，并生成带证据边界的报告。
+Product Agent 是一个本地优先的产品分析 Agent：上传产品介绍后，它会读取材料、搜索证据、判断产品潜力，并生成带证据边界的报告。
 
 ![Product Agent local beta home](docs/assets/local-beta-home.png)
 
