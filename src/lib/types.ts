@@ -245,6 +245,7 @@ export type AgentRuntimeArtifactKind =
   | "handoff_packet"
   | "worker_context"
   | "worker_transcript"
+  | "memory_context"
   | "query_plan"
   | "search_results"
   | "webpage_snapshot"
@@ -1978,6 +1979,54 @@ export type ProductAnalysisCalibrationContext = {
   limitations: string[];
 };
 
+export type ProductMemoryScope = "product_memory" | "calibration_memory" | "procedural_memory";
+
+export type ProductMemoryConflictPolicy =
+  | "prefer_recent"
+  | "prefer_higher_confidence"
+  | "keep_conflicts_as_uncertainty";
+
+export type ProductMemoryProvenance = {
+  sourceType: "analysis" | "backtest" | "system" | "manual";
+  sourceId: string;
+  artifactId?: string;
+  url?: string;
+  summary: string;
+};
+
+export type ProductMemoryEntry = {
+  id: string;
+  scope: ProductMemoryScope;
+  key: string;
+  title: string;
+  summary: string;
+  hints: string[];
+  tags: string[];
+  relatedProductName?: string;
+  workType?: WorkType;
+  confidence: number;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string;
+  provenance: ProductMemoryProvenance[];
+  conflictPolicy: ProductMemoryConflictPolicy;
+  limitations: string[];
+};
+
+export type ProductMemoryContext = {
+  version: "product-memory-v1";
+  generatedAt: string;
+  query: {
+    productName: string;
+    workType: WorkType;
+    tags: string[];
+  };
+  entries: ProductMemoryEntry[];
+  droppedExpiredCount: number;
+  conflictNotes: string[];
+  usageRules: string[];
+};
+
 export type AnalysisRecord = {
   id: string;
   createdAt: string;
@@ -1989,6 +2038,7 @@ export type AnalysisRecord = {
   webResearch?: WebResearchSummary;
   evidenceBrief?: EvidenceBrief;
   calibrationContext?: ProductAnalysisCalibrationContext;
+  memoryContext?: ProductMemoryContext;
   agentTrace?: AgentTraceStep[];
   workType: WorkType;
   targetFeeling: string;

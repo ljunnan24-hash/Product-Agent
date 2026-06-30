@@ -1399,6 +1399,37 @@ function HarnessPanel({
         </section>
       ) : null}
 
+      {record.memoryContext ? (
+        <section className="harness-section calibration-context-section">
+          <h2>Memory hints</h2>
+          <div className="calibration-context-head">
+            <div>
+              <span>{record.memoryContext.version}</span>
+              <strong>{record.memoryContext.entries.length} 条 hint 已加载</strong>
+            </div>
+            <p>
+              {record.memoryContext.query.workType} · {record.memoryContext.query.tags.slice(0, 6).join(" / ") || "no tags"}
+            </p>
+          </div>
+          <div className="calibration-context-rules">
+            {record.memoryContext.entries.slice(0, 6).map((entry) => (
+              <div className={`calibration-context-rule ${entry.confidence >= 0.7 ? "high" : "medium"}`} key={entry.id}>
+                <strong>{entry.scope} · {entry.title}</strong>
+                <p>{entry.hints.slice(0, 2).join("；") || entry.summary}</p>
+                <small>
+                  confidence {Math.round(entry.confidence * 100)}% · expires {formatShortDate(entry.expiresAt)}
+                </small>
+              </div>
+            ))}
+          </div>
+          {record.memoryContext.conflictNotes.length ? (
+            <small>{record.memoryContext.conflictNotes.join(" ")}</small>
+          ) : (
+            <small>{record.memoryContext.usageRules.slice(0, 2).join(" ")}</small>
+          )}
+        </section>
+      ) : null}
+
       {evidenceBrief ? (
         <>
           <section className="harness-section evidence-room">
@@ -3665,6 +3696,15 @@ function formatRuntimeDate(value: string) {
   return date.toLocaleTimeString("zh-CN", {
     hour: "2-digit",
     minute: "2-digit"
+  });
+}
+
+function formatShortDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit"
   });
 }
 

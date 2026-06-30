@@ -78,7 +78,7 @@ export const subagentRegistry: Record<AgentRuntimeSubagentId, AgentSubagentRegis
     defaultModelProvider: "deterministic",
     allowedTools: ["handoff", "query_plan"],
     readableMemoryScopes: ["run_checkpoint", "product_memory", "calibration_memory", "procedural_memory"],
-    writableArtifactKinds: ["handoff_packet", "run_summary", "failure_report"],
+    writableArtifactKinds: ["handoff_packet", "memory_context", "run_summary", "failure_report"],
     defaultContextPolicyId: "default",
     evaluationMetrics: ["task_graph_completeness", "dependency_blocking", "interrupt_correctness"],
     securityNotes: ["主控只消费 handoff 和 artifact refs，不直接读取网页/PDF/README 原文。"]

@@ -8,6 +8,7 @@ import type {
   AgentJudgeVerdict,
   AgentToolGuardrailResult,
   EvidenceBrief,
+  ProductMemoryContext,
   ProductDecision,
   WebResearchSummary
 } from "./types";
@@ -15,6 +16,7 @@ import type {
 type JudgeInput = {
   evidenceBrief: EvidenceBrief;
   webResearch: WebResearchSummary;
+  memoryContext?: ProductMemoryContext;
   contextLabel?: string;
 };
 
@@ -23,6 +25,7 @@ const judgeWorkerDefinition = getRegisteredWorkerDefinition("judge-agent");
 export async function runJudgeAgent({
   evidenceBrief,
   webResearch,
+  memoryContext,
   contextLabel = "主分析"
 }: JudgeInput): Promise<{
   verdict: AgentJudgeVerdict;
@@ -114,7 +117,7 @@ export async function runJudgeAgent({
     definition: judgeWorkerDefinition,
     parentSpanId: spanId,
     taskNodeId: "judge",
-    inputSummary: `${contextLabel}：Evidence ${evidenceBrief.evidenceCards.length} 张，Source Budget ${evidenceBrief.sourceBudgetScore}/100，搜索质量 ${webResearch.searchQuality?.qualityScore ?? "unknown"}。`,
+      inputSummary: `${contextLabel}：Evidence ${evidenceBrief.evidenceCards.length} 张，Source Budget ${evidenceBrief.sourceBudgetScore}/100，搜索质量 ${webResearch.searchQuality?.qualityScore ?? "unknown"}。`,
     idempotencyKey: [
       "judge",
       evidenceBrief.productName || "unknown",
@@ -126,8 +129,8 @@ export async function runJudgeAgent({
     boundary: {
       inputArtifactIds: latestRuntimeArtifactIds(webResearch),
       acceptedInputSummary:
-        "接收 Evidence Brief、Source Budget、搜索质量摘要和最近 handoff；不接收网页全文或搜索噪音。",
-      inputCharCount: judgeInputCharCount(evidenceBrief, webResearch),
+        "接收 Evidence Brief、Source Budget、搜索质量摘要、Memory hints 和最近 handoff；不接收网页全文、历史分析全文或搜索噪音。",
+      inputCharCount: judgeInputCharCount(evidenceBrief, webResearch, memoryContext),
       modelProvider: "deterministic",
       payload: {
         contextLabel,
@@ -136,10 +139,13 @@ export async function runJudgeAgent({
         sourceBudgetScore: evidenceBrief.sourceBudgetScore,
         confidenceScore: evidenceBrief.confidenceScore,
         searchQualityScore: webResearch.searchQuality?.qualityScore ?? null,
+        memoryHints: memoryContext?.entries.length ?? 0,
+        memoryConflictNotes: memoryContext?.conflictNotes.slice(0, 4) ?? [],
         latestHandoffIds: webResearch.runtimeTrace?.handoffs.slice(-4).map((handoff) => handoff.id) ?? []
       },
       forbiddenInputs: [
         "不得读取网页全文或搜索结果原始噪音。",
+        "不得把 Memory hints 当作事实证据、外部引用或置信加分依据。",
         "不得用模型主观判断补足缺失证据。",
         "不得放宽 Evidence Stop、Source Budget 或反证要求。"
       ],
@@ -149,7 +155,7 @@ export async function runJudgeAgent({
       ]
     },
     execute: async (context) => {
-      const inputGuardrails = judgeInputGuardrails(evidenceBrief, webResearch);
+      const inputGuardrails = judgeInputGuardrails(evidenceBrief, webResearch, memoryContext);
       const toolCallId = runtime.startToolCall({
         policy: toolPolicies.judge,
         parentSpanId: spanId,
@@ -356,7 +362,11 @@ function latestRuntimeArtifactIds(webResearch: WebResearchSummary) {
     .slice(-8);
 }
 
-function judgeInputCharCount(evidenceBrief: EvidenceBrief, webResearch: WebResearchSummary) {
+function judgeInputCharCount(
+  evidenceBrief: EvidenceBrief,
+  webResearch: WebResearchSummary,
+  memoryContext?: ProductMemoryContext
+) {
   return JSON.stringify({
     evidenceCards: evidenceBrief.evidenceCards.length,
     sourceBudgets: evidenceBrief.sourceBudgets.length,
@@ -364,13 +374,19 @@ function judgeInputCharCount(evidenceBrief: EvidenceBrief, webResearch: WebResea
     searchQuality: webResearch.searchQuality,
     queryExecutions: webResearch.queryExecutions?.length ?? 0,
     searchResults: webResearch.searchResults.length,
-    crawled: webResearch.crawled.length
+    crawled: webResearch.crawled.length,
+    memoryEntries: memoryContext?.entries.map((entry) => ({
+      scope: entry.scope,
+      confidence: entry.confidence,
+      summary: entry.summary
+    })) ?? []
   }).length;
 }
 
 function judgeInputGuardrails(
   evidenceBrief: EvidenceBrief,
-  webResearch: WebResearchSummary
+  webResearch: WebResearchSummary,
+  memoryContext?: ProductMemoryContext
 ): AgentToolGuardrailResult[] {
   return [
     {
@@ -392,6 +408,14 @@ function judgeInputGuardrails(
       message: webResearch.searchQuality
         ? `Search quality score ${webResearch.searchQuality.qualityScore}/100.`
         : "Search quality unavailable; Judge must cap confidence if external evidence is sparse."
+    },
+    {
+      id: "judge-input-memory",
+      label: "Memory Boundary",
+      status: "pass",
+      message: memoryContext?.entries.length
+        ? `${memoryContext.entries.length} memory hints loaded as non-evidence context; conflicts ${memoryContext.conflictNotes.length}.`
+        : "No memory hints loaded."
     }
   ];
 }

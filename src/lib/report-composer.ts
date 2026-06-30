@@ -8,12 +8,14 @@ import type {
   AgentToolGuardrailResult,
   EvidenceBrief,
   ProductDiagnosisReport,
+  ProductMemoryContext,
   WebResearchSummary
 } from "./types";
 
 export type ReportComposerInput = Parameters<typeof generateProductDiagnosisReport>[0] & {
   evidenceBrief: EvidenceBrief;
   webResearch: WebResearchSummary;
+  memoryContext?: ProductMemoryContext;
 };
 
 export type ReportComposerOutput = {
@@ -125,7 +127,7 @@ export async function generateReportWithRuntime(
     boundary: {
       inputArtifactIds: latestRuntimeArtifactIds(input.webResearch),
       acceptedInputSummary:
-        "接收 Evidence Brief、Judge verdict、最近 handoff、材料摘要、校准规则和 workflow trace；不接收网页全文或搜索噪音。",
+        "接收 Evidence Brief、Judge verdict、最近 handoff、材料摘要、校准规则、Memory hints 和 workflow trace；不接收网页全文、历史分析全文或搜索噪音。",
       inputCharCount: reportInputCharCount(input),
       modelProvider: modelProviderForBoundary(model),
       payload: {
@@ -136,11 +138,14 @@ export async function generateReportWithRuntime(
         confidenceScore: input.evidenceBrief.confidenceScore,
         judgeStatus: input.webResearch.judgeVerdict?.status ?? null,
         judgeConfidenceCap: input.webResearch.judgeVerdict?.confidenceCap ?? null,
+        memoryHints: input.memoryContext?.entries.length ?? 0,
+        memoryConflictNotes: input.memoryContext?.conflictNotes.slice(0, 4) ?? [],
         latestHandoffIds: input.webResearch.runtimeTrace?.handoffs.slice(-4).map((handoff) => handoff.id) ?? []
       },
       forbiddenInputs: [
         "不得读取主 Agent 的隐藏推理。",
         "不得把网页全文、搜索摘要噪音或失败 provider 当作市场证据。",
+        "不得把 Memory hints 当作市场证据、引用来源或结论依据。",
         "不得生成强于 Judge allowedReportStrength 的结论。",
         "不得突破 Judge confidenceCap 或 Evidence Stop。"
       ],
@@ -376,6 +381,17 @@ function reportInputCharCount(input: ReportComposerInput) {
       sourceBudgets: input.evidenceBrief.sourceBudgets.length,
       confidenceScore: input.evidenceBrief.confidenceScore,
       judgeVerdict: input.webResearch.judgeVerdict,
+      memoryContext: input.memoryContext
+        ? {
+            entries: input.memoryContext.entries.map((entry) => ({
+              scope: entry.scope,
+              confidence: entry.confidence,
+              summary: entry.summary,
+              hints: entry.hints.slice(0, 3)
+            })),
+            conflicts: input.memoryContext.conflictNotes
+          }
+        : undefined,
       handoffs: input.webResearch.runtimeTrace?.handoffs.slice(-4).map((handoff) => handoff.contextSummary)
     }).length
   );
@@ -415,6 +431,14 @@ function reportInputGuardrails(
       label: "Model",
       status: model ? "pass" : "block",
       message: `Report model: ${model || "unknown"}.`
+    },
+    {
+      id: "report-input-memory",
+      label: "Memory Boundary",
+      status: "pass",
+      message: input.memoryContext?.entries.length
+        ? `${input.memoryContext.entries.length} memory hints loaded as non-evidence context; conflicts ${input.memoryContext.conflictNotes.length}.`
+        : "No memory hints loaded."
     }
   ];
 }

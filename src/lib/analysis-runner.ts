@@ -17,6 +17,11 @@ import { buildReportEvidenceBindings } from "./report-evidence-binding";
 import { generateReportWithRuntime } from "./report-composer";
 import { attachReportQualityToTrace, evaluateReportQuality } from "./report-quality";
 import { extractPlainText } from "./text-extractor";
+import {
+  loadProductMemoryContext,
+  memoryContextSummary,
+  persistAnalysisMemory
+} from "./memory-store";
 import { SubagentRunner } from "./subagent-runner";
 import { getRegisteredWorkerDefinition } from "./subagent-registry";
 import {
@@ -283,6 +288,56 @@ export async function runAnalysisFromFormData(
     }
   }
 
+  const memoryContext = await loadProductMemoryContext({
+    brief,
+    materials,
+    productName: workflow.inferredProductName,
+    workType: workflow.inferredWorkType,
+    calibrationContext
+  });
+  if (memoryContext.entries.length) {
+    const memoryArtifact = await researchRuntime.addArtifact({
+      kind: "memory_context",
+      owner: "research_supervisor",
+      title: "Product Memory Context",
+      summary: memoryContextSummary(memoryContext),
+      payload: memoryContext,
+      itemCount: memoryContext.entries.length,
+      preview: memoryContext.entries.map((entry) => `${entry.scope}: ${entry.title}`).join("；")
+    });
+    researchRuntime.createHandoff({
+      from: "research_supervisor",
+      to: "main_agent",
+      goal: "把长期 memory 压缩为可审计 hints，供 Judge/Report 作为非证据上下文使用。",
+      contextSummary: memoryContextSummary(memoryContext),
+      artifactIds: [memoryArtifact.id],
+      evidenceRefs: [],
+      acceptedInputSummary:
+        "只接收 product/calibration/procedural memory 的压缩 hints、TTL、confidence、provenance 和 conflict notes；不接收历史分析全文。",
+      keyFindings: memoryContext.entries.slice(0, 5).map((entry) => `${entry.scope}: ${entry.summary}`),
+      uncertainties: [
+        ...memoryContext.conflictNotes,
+        "Memory 可能过期或与当前证据冲突，不能作为外部市场证据。"
+      ],
+      forbiddenClaims: [
+        "不得把 memory hint 当作事实证据或引用来源。",
+        "不得用 memory 覆盖当前 Evidence Brief、Judge verdict 或网页证据。"
+      ],
+      nextActions: ["用 memory hints 改善问题意识；所有判断仍以本次证据链为准。"]
+    });
+    webResearch = {
+      ...webResearch,
+      runtimeTrace: researchRuntime.getTrace()
+    };
+    await emit({
+      stage: "evidence_agent",
+      status: "running",
+      title: "加载 Memory hints",
+      summary: memoryContextSummary(memoryContext),
+      detail: memoryContext.usageRules.join("；")
+    });
+  }
+
   await emit({
     stage: "evidence_agent",
     status: "running",
@@ -292,6 +347,7 @@ export async function runAnalysisFromFormData(
   const judged = await runJudgeAgent({
     evidenceBrief,
     webResearch,
+    memoryContext,
     contextLabel: "主分析报告前"
   });
   webResearch = judged.webResearch;
@@ -325,6 +381,7 @@ export async function runAnalysisFromFormData(
     webResearch,
     evidenceBrief,
     calibrationContext,
+    memoryContext,
     agentTrace: workflow.trace,
     workType: workflow.inferredWorkType,
     targetFeeling: workflow.inferredGoal,
@@ -375,6 +432,7 @@ export async function runAnalysisFromFormData(
     webResearch,
     evidenceBrief,
     calibrationContext,
+    memoryContext,
     agentTrace,
     workType: workflow.inferredWorkType,
     targetFeeling: workflow.inferredGoal,
@@ -390,6 +448,7 @@ export async function runAnalysisFromFormData(
   };
 
   await saveAnalysis(record);
+  await persistAnalysisMemory(record);
 
   await emit({
     stage: "quality_gate",

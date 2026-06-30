@@ -9,6 +9,7 @@ import type {
   ProductAnalysisCalibrationContext,
   ProductVariantId,
   ProductDiagnosisReport,
+  ProductMemoryContext,
   UploadedMaterial,
   ValidationExperiment,
   WebResearchSummary,
@@ -22,6 +23,7 @@ type GenerateReportInput = {
   webResearch?: WebResearchSummary;
   evidenceBrief?: EvidenceBrief;
   calibrationContext?: ProductAnalysisCalibrationContext;
+  memoryContext?: ProductMemoryContext;
   agentTrace?: AgentTraceStep[];
   workType: WorkType;
   targetFeeling: string;
@@ -215,6 +217,9 @@ ${formatEvidenceBrief(input.evidenceBrief)}
 
 README / GitHub calibration:
 ${formatCalibrationContext(input.calibrationContext)}
+
+Memory v1 hints:
+${formatMemoryContext(input.memoryContext)}
 
 Image metrics from browser canvas:
 ${metrics}
@@ -510,6 +515,34 @@ function formatCalibrationContext(context?: ProductAnalysisCalibrationContext) {
     `Calibration actions:\n${actions}`,
     `Failure patterns:\n${failures}`,
     `Limitations: ${context.limitations.join(" | ")}`
+  ].join("\n");
+}
+
+function formatMemoryContext(context?: ProductMemoryContext) {
+  if (!context || !context.entries.length) {
+    return "No product/calibration/procedural memory hints matched this analysis.";
+  }
+  const entries = context.entries
+    .map((entry) => {
+      const provenance = entry.provenance
+        .slice(0, 2)
+        .map((item) => `${item.sourceType}:${item.sourceId} (${item.summary})`)
+        .join("; ");
+      return [
+        `- [${entry.scope}] ${entry.title}; confidence=${entry.confidence}; expires=${entry.expiresAt}; conflict_policy=${entry.conflictPolicy}`,
+        `  summary=${entry.summary}`,
+        `  hints=${entry.hints.slice(0, 4).join(" | ") || "none"}`,
+        `  provenance=${provenance || "none"}`,
+        `  limitations=${entry.limitations.join(" | ")}`
+      ].join("\n");
+    })
+    .join("\n");
+  return [
+    "Rules: memory is hint-only context. It is not external evidence, not a citation source, and must not raise confidence. If it conflicts with current evidence, prefer current evidence and mention uncertainty.",
+    `Query tags: ${context.query.tags.join(", ") || "none"}`,
+    `Conflict notes: ${context.conflictNotes.join(" | ") || "none"}`,
+    `Usage rules: ${context.usageRules.join(" | ")}`,
+    `Entries:\n${entries}`
   ].join("\n");
 }
 
