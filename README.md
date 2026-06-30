@@ -19,7 +19,7 @@ pnpm local
 
 - http://127.0.0.1:3020
 
-打开首页后会看到 Local Beta 状态面板，里面会展示 `pnpm doctor` 的结果，包括依赖、环境变量、Docker、worker daemon 和 durable queue。没有 blocker 时可以直接上传材料或粘贴 GitHub repo URL 开始分析。
+打开首页后会看到 Local Beta 状态面板，里面会展示 `pnpm doctor` 的结果，包括依赖、环境变量、Docker、worker daemon 和 durable queue。没有 blocker 时可以直接上传或粘贴产品介绍开始分析。
 
 第一次试用可以点击首页对话里的 `载入示例`。它会填入 `examples/local-beta-demo` 的 SignalShelf 样例材料，包括产品 README、访谈记录和早期渠道数据，适合快速生成第一份报告。
 
@@ -86,7 +86,8 @@ pnpm worker:local-drain -- --watch
 
 - 只有一个对话入口。
 - 只有一个上传材料处。
-- 用户上传 README、产品介绍 PDF 或其他产品材料，或直接粘贴 GitHub repo URL，并用自然语言补充当前想验证的问题。
+- 用户上传或粘贴产品介绍，并用自然语言补充当前想验证的问题。
+- Agent 第一次收到材料会先快速浏览；如果产品是什么、给谁用、解决什么问题这些核心信息不足，会先让用户补充，不会直接进入深度调研。
 - 材料可以是 README/Markdown/TXT、产品介绍 PDF、PRD、页面截图、海报、调研材料或品牌视觉。
 - Agent 自动读取材料，提取 README 链接，按关键假设规划搜索，抓取公开网页证据，再用报告模型拆解产品内部问题，并判断产品有没有潜力。
 - 证据调研会优先抓取高价值外链，并对搜索结果中的高价值 URL 继续抓网页正文；README/GitHub 项目会额外查询 adoption、issue/discussion、release/changelog 等开发者工具信号。

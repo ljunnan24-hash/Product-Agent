@@ -79,6 +79,15 @@ const allowedTypes = new Set([
   "text/plain"
 ]);
 const maxFileSize = 12 * 1024 * 1024;
+const minimumFirstPassChars = 260;
+const confidentFirstPassChars = 700;
+
+type MaterialReadiness = {
+  ready: boolean;
+  summary: string;
+  detail?: string;
+  message?: string;
+};
 
 export class AnalysisRequestError extends Error {
   status: number;
@@ -111,7 +120,7 @@ export async function runAnalysisFromFormData(
     [value(formData, "github_repo_url"), brief].filter(Boolean).join("\n")
   );
   const files = getFiles(formData);
-  validateInputs(files, githubRepoUrls.length);
+  validateInputs(files, githubRepoUrls.length, brief);
 
   const id = crypto.randomUUID();
   const imageMetrics = parseMetrics(value(formData, "image_metrics"));
@@ -146,6 +155,12 @@ export async function runAnalysisFromFormData(
     emit
   });
   const { materials, githubEvidence, githubWarnings } = materialRead;
+  const readiness = assessMaterialReadiness({
+    brief,
+    materials,
+    githubRepoUrls,
+    githubWarnings
+  });
 
   const extractedUrlCount = materials.reduce(
     (sum, item) => sum + (item.extractedUrls?.length ?? 0),
@@ -156,8 +171,19 @@ export async function runAnalysisFromFormData(
     status: "completed",
     title: "材料读完",
     summary: `完成 ${materials.length} 份材料，抽取 ${extractedUrlCount} 个公开链接。`,
-    detail: githubWarnings.length ? githubWarnings.join("；") : undefined
+    detail: [readiness.summary, githubWarnings.join("；")].filter(Boolean).join("；") || undefined
   });
+
+  if (!readiness.ready) {
+    await emit({
+      stage: "material_reader",
+      status: "failed",
+      title: "需要补充产品介绍",
+      summary: readiness.summary,
+      detail: readiness.detail
+    });
+    throw new AnalysisRequestError(readiness.message || "请补充产品介绍后再开始分析。", 422);
+  }
 
   const preliminaryText = [brief, ...materials.map((item) => item.extractedText || "")]
     .filter(Boolean)
@@ -485,6 +511,98 @@ function parseMetrics(raw: string): ImageMetrics | null {
   return null;
 }
 
+function assessMaterialReadiness({
+  brief,
+  materials,
+  githubRepoUrls,
+  githubWarnings
+}: {
+  brief: string;
+  materials: UploadedMaterial[];
+  githubRepoUrls: string[];
+  githubWarnings: string[];
+}): MaterialReadiness {
+  const text = normalizeReadinessText(
+    [
+      brief,
+      ...materials.map((material) =>
+        [material.extractedText, material.textPreview].filter(Boolean).join("\n")
+      )
+    ]
+      .filter(Boolean)
+      .join("\n\n")
+  );
+  const charCount = Array.from(text).length;
+  const hasReadableMaterial = materials.some((material) =>
+    normalizeReadinessText(material.extractedText || material.textPreview || "").length >= 120
+  );
+  const hasImportedRepo = githubRepoUrls.length > 0 && hasReadableMaterial;
+  const missing = missingMaterialBasics(text);
+
+  if (
+    hasImportedRepo ||
+    charCount >= confidentFirstPassChars ||
+    (charCount >= minimumFirstPassChars && missing.length <= 1)
+  ) {
+    return {
+      ready: true,
+      summary: "材料已经够我先判断基本假设，开始深入调研。"
+    };
+  }
+
+  const needs = missing.length
+    ? missing.slice(0, 3)
+    : ["产品是什么", "给谁用", "解决什么问题"];
+  const issue =
+    charCount < minimumFirstPassChars
+      ? "我先浏览了一遍，当前信息还太短，容易分析成泛泛建议。"
+      : "我先浏览了一遍，还缺少开始深入调研的关键信息。";
+  const message = `${issue} 请补充：${needs.join("、")}。有这些后我再继续判断产品潜力。`;
+
+  return {
+    ready: false,
+    summary: issue,
+    detail: [
+      `建议补充：${needs.join("、")}。`,
+      githubWarnings.length ? `读取提示：${githubWarnings.join("；")}` : ""
+    ]
+      .filter(Boolean)
+      .join(" "),
+    message
+  };
+}
+
+function normalizeReadinessText(text: string) {
+  return text
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function missingMaterialBasics(text: string) {
+  const checks = [
+    {
+      label: "产品是什么/核心功能",
+      pattern:
+        /产品|工具|平台|应用|软件|服务|插件|agent|app|tool|platform|software|service|extension|feature|workflow|solution|解决方案|功能/i
+    },
+    {
+      label: "目标用户是谁",
+      pattern:
+        /用户|客户|团队|创始人|开发者|设计师|运营|销售|学生|老师|企业|公司|人群|面向|适合|target|user|customer|persona|team|founder|developer|designer|operator|sales|student|teacher|enterprise|company|ICP/i
+    },
+    {
+      label: "解决什么问题/痛点",
+      pattern:
+        /问题|痛点|需求|场景|任务|成本|效率|麻烦|困难|风险|pain|problem|need|job|use case|workflow|cost|efficient|risk|manual|slow/i
+    }
+  ];
+
+  return checks
+    .filter((check) => !check.pattern.test(text))
+    .map((check) => check.label);
+}
+
 function getFiles(formData: FormData) {
   const materialFiles = formData
     .getAll("materials")
@@ -497,9 +615,9 @@ function getFiles(formData: FormData) {
   return [];
 }
 
-function validateInputs(files: File[], githubRepoCount: number) {
-  if (files.length === 0 && githubRepoCount === 0) {
-    throw new AnalysisRequestError("请先上传材料，或粘贴一个 GitHub repo URL。", 400);
+function validateInputs(files: File[], githubRepoCount: number, brief: string) {
+  if (files.length === 0 && githubRepoCount === 0 && !brief.trim()) {
+    throw new AnalysisRequestError("请先上传或粘贴产品介绍。", 400);
   }
 
   if (files.length > 6) {

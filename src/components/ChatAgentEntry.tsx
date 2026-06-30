@@ -181,15 +181,18 @@ export function ChatAgentEntry({ variant }: Props) {
       router.push(`/analysis/${analysisId}`);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "分析失败");
-      setRunEvents((current) => [
-        ...current,
-        {
-          stage: "quality_gate",
-          status: "failed",
-          title: "分析失败",
-          summary: submitError instanceof Error ? submitError.message : "分析失败"
-        }
-      ]);
+      setRunEvents((current) => {
+        if (current.some((event) => event.status === "failed")) return current;
+        return [
+          ...current,
+          {
+            stage: "quality_gate",
+            status: "failed",
+            title: "分析失败",
+            summary: submitError instanceof Error ? submitError.message : "分析失败"
+          }
+        ];
+      });
     } finally {
       setIsSubmitting(false);
     }
