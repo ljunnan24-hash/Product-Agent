@@ -4,6 +4,7 @@
 
 ```bash
 pnpm install --registry=https://registry.npmmirror.com
+pnpm doctor
 pnpm dev
 ```
 
@@ -26,6 +27,13 @@ SERPER_API_KEY=... # 可选；用于 Serper Web Search
 CODE_EXECUTOR_SANDBOX=auto # 可选：auto / process / docker；生产模式只允许 docker
 CODE_EXECUTOR_DOCKER_IMAGE=python:3.12-slim # 可选；docker 模式使用的本地镜像
 CODE_EXECUTOR_REQUIRE_STRONG_SANDBOX=0 # 可选；设为 1 时即使非 production 也强制 Docker/no-network
+```
+
+本地体检：
+
+```bash
+pnpm doctor        # 检查 Node/pnpm、env、搜索/模型 key、Docker、daemon、durable queue
+pnpm doctor --json # 输出 JSON，方便接安装脚本或 CI
 ```
 
 第一版采用本地 JSON 存储：

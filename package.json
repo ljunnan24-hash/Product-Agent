@@ -12,6 +12,7 @@
     "worker:drain": "node scripts/drain-worker-queue.mjs",
     "worker:local-drain": "node scripts/local-worker-drain.mjs",
     "worker:launchd": "node scripts/manage-worker-launchd.mjs",
+    "doctor": "node scripts/local-doctor.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
