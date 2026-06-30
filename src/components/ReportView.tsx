@@ -264,6 +264,14 @@ type QualityResearchRunEvent = ReportDraftRunEvent & {
   qualityScore?: number;
 };
 
+type ValidationFlowStep = {
+  id: "material" | "research" | "evidence" | "decision";
+  label: string;
+  title: string;
+  summary: string;
+  status: AgentTraceStep["status"];
+};
+
 export function ReportView({ record }: Props) {
   const report = normalizeReportForView(record.report as ProductDiagnosisReport);
   const variant = getVariant(record.productVariant);
@@ -272,11 +280,6 @@ export function ReportView({ record }: Props) {
   const primaryMaterial = record.materials?.[0];
   const isPdf = primaryMaterial?.type === "application/pdf";
   const isText = primaryMaterial ? isTextMaterial(primaryMaterial) : false;
-  const scoreTone = useMemo(() => {
-    if (report.diagnosis_score >= 78) return "strong";
-    if (report.diagnosis_score >= 62) return "mid";
-    return "low";
-  }, [report.diagnosis_score]);
   const reportEvidenceBindings = useMemo(
     () =>
       record.reportEvidenceBindings?.length
@@ -309,6 +312,10 @@ export function ReportView({ record }: Props) {
     leadingIssue?.how_to_fix ??
     record.evidenceBrief?.recommendedExperiment.hypothesis ??
     "用最小验证动作确认用户是否真的愿意为这个问题改变现有做法。";
+  const visibleTrace = trace.length ? trace : fallbackTrace();
+  const validationFlowSteps = buildValidationFlowSteps(record, report, visibleTrace);
+  const researchQuestions = visibleResearchQuestions(record.webResearch);
+  const researchSources = visibleResearchSources(record.webResearch);
   const evidenceBindingFor = (
     targetSection: ReportEvidenceBinding["targetSection"],
     targetIndex?: number
@@ -447,26 +454,52 @@ export function ReportView({ record }: Props) {
                 <p>{readerNextStepDetail}</p>
               </div>
             </div>
+          </section>
 
-            <div className="reader-score-strip">
-              <div className={`reader-score-pill ${scoreTone}`}>
-                <span>诊断分</span>
-                <strong>{report.diagnosis_score}/100</strong>
-              </div>
-              <div>
-                <span>产品潜力</span>
-                <strong>{report.potential_score}/100</strong>
-              </div>
-              <div>
-                <span>参考对象</span>
-                <strong>{references || "暂无"}</strong>
-              </div>
+          <section className="agent-validation-flow" aria-label="调研过程">
+            <div className="agent-validation-head">
+              <span>调研过程</span>
+              <strong>Agent 做了什么</strong>
             </div>
+            <ol className="agent-flow-list">
+              {validationFlowSteps.map((step) => (
+                <li className={step.status} key={step.id}>
+                  <span>{step.label}</span>
+                  <div>
+                    <strong>{step.title}</strong>
+                    <p>{step.summary}</p>
+                  </div>
+                  <em>{validationFlowStatusLabel(step.status)}</em>
+                </li>
+              ))}
+            </ol>
+            {researchQuestions.length || researchSources.length ? (
+              <div className="agent-research-strip">
+                {researchQuestions.length ? (
+                  <div>
+                    <span>搜索过的问题</span>
+                    {researchQuestions.map((question) => (
+                      <em key={question}>{question}</em>
+                    ))}
+                  </div>
+                ) : null}
+                {researchSources.length ? (
+                  <div>
+                    <span>看过的来源</span>
+                    {researchSources.map((source) => (
+                      <a href={source.url} key={source.url} target="_blank" rel="noreferrer">
+                        {source.title}
+                      </a>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </section>
 
           <details className="report-detail-details">
             <summary>
-              <span>完整分析</span>
+              <span>调研细节</span>
               <strong>市场证据、主要问题、参考对象和行动清单</strong>
             </summary>
             <div className="report-detail-body">
@@ -2381,6 +2414,121 @@ function fallbackTrace(): AgentTraceStep[] {
       toolCalls: []
     }
   ];
+}
+
+function buildValidationFlowSteps(
+  record: AnalysisRecord,
+  report: ProductDiagnosisReport,
+  trace: AgentTraceStep[]
+): ValidationFlowStep[] {
+  const materialCount = record.materials?.length ?? 0;
+  const webResearch = record.webResearch;
+  const evidenceBrief = record.evidenceBrief;
+  const queryCount = webResearch?.queryPlan?.length || webResearch?.queries.length || 0;
+  const sourceCount = (webResearch?.crawled.length ?? 0) + (webResearch?.searchResults.length ?? 0);
+  const evidenceCount = evidenceBrief?.evidenceCards.length ?? 0;
+  const leadingCluster = evidenceBrief?.keyEvidenceClusters[0];
+  const experimentTitle = evidenceBrief?.recommendedExperiment.title;
+
+  return [
+    {
+      id: "material",
+      label: "1",
+      title: "快速浏览产品材料",
+      summary:
+        materialCount > 0
+          ? `读了 ${materialCount} 份材料，先抓产品定位、目标用户、使用场景和缺口。`
+          : "先根据当前材料和说明，提取产品定位、目标用户、使用场景和缺口。",
+      status: traceStatus(trace, ["readme_reader", "material_observer", "product_thesis"], "completed")
+    },
+    {
+      id: "research",
+      label: "2",
+      title: "查市场和替代方案",
+      summary:
+        queryCount || sourceCount
+          ? `围绕痛点、竞品、替代方案和付费信号搜了 ${queryCount} 个问题，看了 ${sourceCount} 条外部来源。`
+          : "没有足够外部来源时，先把材料里的假设标出来，避免直接下强结论。",
+      status: traceStatus(
+        trace,
+        ["web_research", "customer_job", "market_fit_review"],
+        queryCount || sourceCount ? "completed" : "skipped"
+      )
+    },
+    {
+      id: "evidence",
+      label: "3",
+      title: "整理支持和反对证据",
+      summary:
+        leadingCluster?.summary ??
+        (evidenceCount
+          ? `整理出 ${evidenceCount} 条证据，区分支持、反对和仍然不确定的部分。`
+          : "把已有信息拆成支持、反对和不确定三类，避免只看对自己有利的信号。"),
+      status: traceStatus(trace, ["evidence_agent", "risk_review", "ux_trust_review"], evidenceCount ? "completed" : "skipped")
+    },
+    {
+      id: "decision",
+      label: "4",
+      title: "给出产品判断和验证动作",
+      summary: `${record.evidenceBrief ? decisionLabel(record.evidenceBrief.decision.decision) : potentialSummaryLabel(report.potential_score)}。下一步：${
+        experimentTitle ?? report.actionable_suggestions[0] ?? "先补一轮目标用户证据。"
+      }`,
+      status: traceStatus(trace, ["potential_assessment", "priority_planner", "quality_gate"], "completed")
+    }
+  ];
+}
+
+function traceStatus(
+  trace: AgentTraceStep[],
+  stages: AgentStage[],
+  fallback: AgentTraceStep["status"]
+) {
+  const matches = trace.filter((step) => stages.includes(step.stage));
+  if (!matches.length) return fallback;
+  if (matches.some((step) => step.status === "failed")) return "failed";
+  if (matches.some((step) => step.status === "completed")) return "completed";
+  return matches[0].status;
+}
+
+function visibleResearchQuestions(webResearch: AnalysisRecord["webResearch"]) {
+  return uniqueStrings([
+    ...(webResearch?.queryPlan?.map((query) => query.query) ?? []),
+    ...(webResearch?.queries ?? [])
+  ]).slice(0, 3);
+}
+
+function visibleResearchSources(webResearch: AnalysisRecord["webResearch"]) {
+  const sources = [...(webResearch?.crawled ?? []), ...(webResearch?.searchResults ?? [])];
+  const seen = new Set<string>();
+
+  return sources.flatMap((source) => {
+    if (!source.url || seen.has(source.url)) return [];
+    seen.add(source.url);
+    return [
+      {
+        title: source.title || shortUrl(source.url),
+        url: source.url
+      }
+    ];
+  }).slice(0, 4);
+}
+
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
+function shortUrl(url: string) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+function validationFlowStatusLabel(status: AgentTraceStep["status"]) {
+  if (status === "completed") return "完成";
+  if (status === "failed") return "需重试";
+  return "跳过";
 }
 
 function iconForStage(stage: AgentStage) {
