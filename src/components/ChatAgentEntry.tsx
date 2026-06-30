@@ -110,7 +110,10 @@ export function ChatAgentEntry({ variant }: Props) {
   const [isLoadingExample, setIsLoadingExample] = useState(false);
 
   const primaryMetrics = materials[0]?.metrics ?? null;
-  const composerPlaceholder = followUpPrompt
+  const isAwaitingSupplement = Boolean(
+    followUpPrompt && (submittedBrief || submittedMaterialNames.length)
+  );
+  const composerPlaceholder = isAwaitingSupplement
     ? "补充目标用户、痛点或核心功能。"
     : "粘贴产品介绍，或补充一句你想判断的问题。";
 
@@ -130,7 +133,6 @@ export function ChatAgentEntry({ variant }: Props) {
     if (!fileList) return;
 
     setError("");
-    setFollowUpPrompt("");
     const incoming = [...fileList].slice(0, 6 - materials.length);
     const nextMaterials: MaterialDraft[] = [];
 
@@ -161,22 +163,36 @@ export function ChatAgentEntry({ variant }: Props) {
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+    const isSupplementing = Boolean(
+      followUpPrompt && (submittedBrief || submittedMaterialNames.length)
+    );
+    const currentBrief = brief.trim();
+    const hasNewSupplementMaterial = materials.length > submittedMaterialNames.length;
+
+    if (isSupplementing && !currentBrief && !hasNewSupplementMaterial) {
+      setError("先补充一点目标用户、痛点或核心功能。");
+      return;
+    }
+
     setFollowUpPrompt("");
 
-    if (materials.length === 0 && !brief.trim()) {
+    if (materials.length === 0 && !currentBrief && !isSupplementing) {
       setError("先上传或粘贴产品介绍。");
       return;
     }
 
+    const mergedBrief = isSupplementing
+      ? mergeIntakeBrief(submittedBrief, currentBrief)
+      : currentBrief;
     const body = buildSubmissionBody({
       productVariant: variant.id,
-      brief,
+      brief: mergedBrief,
       imageMetrics: primaryMetrics,
       githubRepoUrl: "",
       materials
     });
 
-    setSubmittedBrief(brief.trim());
+    setSubmittedBrief(mergedBrief);
     setSubmittedMaterialNames(materials.map((material) => material.file.name || "产品介绍"));
     await startAnalysis(body);
   }
@@ -203,6 +219,7 @@ export function ChatAgentEntry({ variant }: Props) {
       const message = submitError instanceof Error ? submitError.message : "分析失败";
       if (submitError instanceof StreamAnalysisError && submitError.status === 422) {
         setFollowUpPrompt(message);
+        setBrief("");
         setError("");
       } else {
         setError(message);
@@ -411,9 +428,9 @@ export function ChatAgentEntry({ variant }: Props) {
         </div>
 
         <div className="composer-box">
-          {followUpPrompt ? (
+          {isAwaitingSupplement ? (
             <p className="composer-follow-up-hint">
-              补充目标用户、痛点或核心功能后再发送。
+              补充内容会和上一轮产品介绍一起分析。
             </p>
           ) : null}
           {materials.length > 0 ? (
@@ -563,6 +580,14 @@ function buildSubmissionBody({
   }
 
   return body;
+}
+
+function mergeIntakeBrief(previousBrief: string, supplement: string) {
+  const previous = previousBrief.trim();
+  const next = supplement.trim();
+  if (!previous) return next;
+  if (!next) return previous;
+  return `${previous}\n\n补充：${next}`;
 }
 
 function isAllowedMaterial(file: File) {
