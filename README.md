@@ -1,6 +1,12 @@
 # Product Agent MVP
 
-本地运行：
+Product Agent 是一个本地优先的产品分析 Agent：上传 README/PDF/截图/CSV/JSON 或粘贴 GitHub repo URL 后，它会读取材料、搜索证据、判断产品潜力，并生成带证据边界的报告。
+
+## Local Beta v0.1
+
+这一阶段默认不需要数据库和服务器，适合先让朋友、本地用户或 GitHub 访客 clone 后试用。
+
+快速启动：
 
 ```bash
 pnpm install --registry=https://registry.npmmirror.com
@@ -10,6 +16,14 @@ pnpm local
 访问：
 
 - http://127.0.0.1:3020
+
+打开首页后会看到 Local Beta 状态面板，里面会展示 `pnpm doctor` 的结果，包括依赖、环境变量、Docker、worker daemon 和 durable queue。没有 blocker 时可以直接上传材料或粘贴 GitHub repo URL 开始分析。
+
+常见状态：
+
+- `0 阻塞`：本地环境可以跑。
+- `有提醒`：可以跑，但搜索 key、Docker 或历史 worker 状态可能影响完整体验。
+- `有阻塞`：先按面板或 `pnpm doctor` 输出处理。
 
 环境变量：
 

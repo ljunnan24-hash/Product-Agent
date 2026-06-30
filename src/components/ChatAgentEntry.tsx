@@ -15,6 +15,7 @@ import {
   TrendingUp,
   Wand2
 } from "lucide-react";
+import { LocalBetaStatusPanel } from "./LocalBetaStatusPanel";
 import type { ProductVariantConfig } from "@/lib/variants";
 import type {
   AnalysisRunLog,
@@ -221,6 +222,7 @@ export function ChatAgentEntry({ variant }: Props) {
 
   return (
     <main className="chat-agent-layout conversation-mode">
+      <LocalBetaStatusPanel />
       <form className="chat-console conversation-console" onSubmit={onSubmit}>
         <div className="chat-history conversation-thread" aria-label="Product Agent conversation">
           <Message role="agent">
