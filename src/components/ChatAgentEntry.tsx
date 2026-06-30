@@ -264,28 +264,36 @@ export function ChatAgentEntry({ variant }: Props) {
 
   return (
     <main className="chat-agent-layout conversation-mode">
-      <LocalBetaStatusPanel />
-      <form className="chat-console conversation-console" onSubmit={onSubmit}>
-        <div className="chat-history conversation-thread" aria-label="Product Agent conversation">
-          <Message role="agent">
-            <strong>把产品材料发给我，我来判断潜力。</strong>
-            <p>推荐先上传这些文件；再补一句你想验证什么，然后开始。</p>
-            <div className="starter-materials" aria-label="建议上传材料">
-              {starterMaterials.map((material) => (
-                <span key={material.name}>
-                  <strong>{material.name}</strong>
-                  <small>{material.detail}</small>
-                </span>
-              ))}
-            </div>
-            <div className="demo-example-action">
-              <button type="button" onClick={loadDemoExample} disabled={isLoadingExample}>
-                {isLoadingExample ? <Loader2 className="spin" size={16} /> : <Wand2 size={16} />}
-                载入示例
-              </button>
-              <small>使用内置 SignalShelf 材料快速跑第一份报告。</small>
-            </div>
-          </Message>
+      <section className="product-intake-hero">
+        <span>Local-first Product Agent</span>
+        <h1>上传材料，判断产品潜力。</h1>
+        <p>README、PDF、截图、GitHub repo 都可以。本地运行，报告会把支持证据、反证风险和下一步验证实验拆开。</p>
+      </section>
+
+      <div className="product-start-grid">
+        <div className="product-start-main">
+          <LocalBetaStatusPanel />
+          <form className="chat-console conversation-console" onSubmit={onSubmit}>
+            <div className="chat-history conversation-thread" aria-label="Product Agent conversation">
+              <Message role="agent">
+                <strong>把产品材料发给我，我来判断潜力。</strong>
+                <p>推荐先上传这些文件；再补一句你想验证什么，然后开始。</p>
+                <div className="starter-materials" aria-label="建议上传材料">
+                  {starterMaterials.map((material) => (
+                    <span key={material.name}>
+                      <strong>{material.name}</strong>
+                      <small>{material.detail}</small>
+                    </span>
+                  ))}
+                </div>
+                <div className="demo-example-action">
+                  <button type="button" onClick={loadDemoExample} disabled={isLoadingExample}>
+                    {isLoadingExample ? <Loader2 className="spin" size={16} /> : <Wand2 size={16} />}
+                    载入示例
+                  </button>
+                  <small>使用内置 SignalShelf 材料快速跑第一份报告。</small>
+                </div>
+              </Message>
           {materials.length > 0 || githubRepoUrl.trim() ? (
             <Message role="user">
               <strong>
@@ -387,9 +395,9 @@ export function ChatAgentEntry({ variant }: Props) {
               </div>
             </Message>
           ) : null}
-        </div>
+            </div>
 
-        <div className="composer-box">
+            <div className="composer-box">
           {materials.length > 0 ? (
             <div className="material-strip">
               {materials.map((material, index) => (
@@ -461,8 +469,11 @@ export function ChatAgentEntry({ variant }: Props) {
           </div>
         </div>
 
-        {error ? <p className="form-error">{error}</p> : null}
-      </form>
+            {error ? <p className="form-error">{error}</p> : null}
+          </form>
+        </div>
+        <ReportPreviewPanel />
+      </div>
     </main>
   );
 
@@ -514,6 +525,54 @@ export function ChatAgentEntry({ variant }: Props) {
     setResumedRun(null);
     setRunEvents([]);
   }
+}
+
+function ReportPreviewPanel() {
+  return (
+    <aside className="report-preview-panel" aria-label="报告预览">
+      <div className="preview-header">
+        <span>Sample output</span>
+        <strong>SignalShelf</strong>
+      </div>
+      <div className="preview-score-row">
+        <div>
+          <span>Potential</span>
+          <strong>72</strong>
+        </div>
+        <div>
+          <span>Decision</span>
+          <strong>谨慎推进</strong>
+        </div>
+      </div>
+      <div className="preview-evidence-list">
+        <PreviewLine
+          label="支持"
+          text="12 次访谈里 7 次指向反馈优先级困惑，agency referral 激活率更高。"
+        />
+        <PreviewLine
+          label="反证"
+          text="Notion、Airtable、表格替代强；协作价值还没有被验证。"
+        />
+        <PreviewLine
+          label="实验"
+          text="给 5 个 builder 做 3 周 concierge memo，对比手写 founder update。"
+        />
+      </div>
+      <div className="preview-footer">
+        <span>Evidence-bound</span>
+        <span>Judge + Report</span>
+      </div>
+    </aside>
+  );
+}
+
+function PreviewLine({ label, text }: { label: string; text: string }) {
+  return (
+    <div className="preview-line">
+      <span>{label}</span>
+      <p>{text}</p>
+    </div>
+  );
 }
 
 function buildSubmissionBody({
