@@ -114,9 +114,11 @@ export function ChatAgentEntry({ variant }: Props) {
     followUpPrompt && (submittedBrief || submittedMaterialNames.length)
   );
   const composerPlaceholder = isAwaitingSupplement
-    ? "补充目标用户、痛点或核心功能。"
+    ? "直接补一句：给谁用、现在怎么解决、你最想验证什么。"
     : "粘贴产品介绍。比如：给谁用、解决什么问题、现在做到哪一步。";
   const followUpDisplay = simplifyFollowUpPrompt(followUpPrompt);
+  const submittedBriefParts = splitIntakeBrief(submittedBrief);
+  const hasSubmittedSupplement = submittedBriefParts.supplements.length > 0;
 
   useEffect(() => {
     void restoreLastRun();
@@ -171,7 +173,7 @@ export function ChatAgentEntry({ variant }: Props) {
     const hasNewSupplementMaterial = materials.length > submittedMaterialNames.length;
 
     if (isSupplementing && !currentBrief && !hasNewSupplementMaterial) {
-      setError("先补充一点目标用户、痛点或核心功能。");
+      setError("直接补一句目标用户、痛点或你想验证的问题就行。");
       return;
     }
 
@@ -195,18 +197,21 @@ export function ChatAgentEntry({ variant }: Props) {
 
     setSubmittedBrief(mergedBrief);
     setSubmittedMaterialNames(materials.map((material) => material.file.name || "产品介绍"));
-    await startAnalysis(body);
+    setBrief("");
+    await startAnalysis(body, { isSupplement: isSupplementing });
   }
 
-  async function startAnalysis(body: FormData) {
+  async function startAnalysis(body: FormData, options?: { isSupplement?: boolean }) {
     setIsSubmitting(true);
     setResumedRun(null);
     setRunEvents([
       {
         stage: "intake",
         status: "running",
-        title: "开始浏览",
-        summary: "产品介绍已收到，我先快速看一遍。"
+        title: options?.isSupplement ? "合并补充" : "开始浏览",
+        summary: options?.isSupplement
+          ? "我把刚补充的信息和上一轮产品介绍放在一起看。"
+          : "产品介绍已收到，我先快速看一遍。"
       }
     ]);
 
@@ -324,21 +329,33 @@ export function ChatAgentEntry({ variant }: Props) {
             </div>
           </Message>
           {submittedBrief || submittedMaterialNames.length > 0 ? (
-            <Message role="user">
-              <strong>
-                {submittedMaterialNames.length
-                  ? `已上传 ${submittedMaterialNames.length} 份产品介绍。`
-                  : "我想分析这个产品。"}
-              </strong>
-              {submittedBrief ? <p>{submittedBrief}</p> : <p>请判断产品潜力。</p>}
-              {submittedMaterialNames.length ? (
-                <div className="user-material-list">
-                  {submittedMaterialNames.map((name, index) => (
-                    <span key={`${name}-${index}`}>{name}</span>
-                  ))}
-                </div>
-              ) : null}
-            </Message>
+            <>
+              <Message role="user">
+                <strong>
+                  {submittedMaterialNames.length
+                    ? `已上传 ${submittedMaterialNames.length} 份产品介绍。`
+                    : "我想分析这个产品。"}
+                </strong>
+                {submittedBriefParts.primary ? (
+                  <p>{submittedBriefParts.primary}</p>
+                ) : (
+                  <p>请判断产品潜力。</p>
+                )}
+                {submittedMaterialNames.length ? (
+                  <div className="user-material-list">
+                    {submittedMaterialNames.map((name, index) => (
+                      <span key={`${name}-${index}`}>{name}</span>
+                    ))}
+                  </div>
+                ) : null}
+              </Message>
+              {submittedBriefParts.supplements.map((supplement, index) => (
+                <Message role="user" key={`supplement-${index}-${supplement.slice(0, 24)}`}>
+                  <strong>{index === 0 ? "我补充一下。" : "我再补充一点。"}</strong>
+                  <p>{supplement}</p>
+                </Message>
+              ))}
+            </>
           ) : null}
           {submittedBrief || submittedMaterialNames.length > 0 ? (
             <Message role="agent">
@@ -348,7 +365,11 @@ export function ChatAgentEntry({ variant }: Props) {
                   <p>{followUpDisplay}</p>
                 </div>
               ) : (
-                <p>收到。我会先读一遍；如果材料够了，就去调研替代方案和证据。</p>
+                <p>
+                  {hasSubmittedSupplement
+                    ? "收到补充。我会把前后信息放在一起，继续调研替代方案、真实痛点和反证。"
+                    : "收到。我会先读一遍；如果信息够了，就去调研替代方案和证据。"}
+                </p>
               )}
               <LiveReasoningPanel
                 hasMaterials={Boolean(submittedBrief || submittedMaterialNames.length)}
@@ -432,7 +453,7 @@ export function ChatAgentEntry({ variant }: Props) {
         <div className="composer-box">
           {isAwaitingSupplement ? (
             <p className="composer-follow-up-hint">
-              我会把补充内容和上一轮产品介绍放在一起判断。
+              不用重写一遍，直接补一句就行，我会接着上一轮看。
             </p>
           ) : null}
           {materials.length > 0 ? (
@@ -601,6 +622,17 @@ function mergeIntakeBrief(previousBrief: string, supplement: string) {
   if (!previous) return next;
   if (!next) return previous;
   return `${previous}\n\n补充：${next}`;
+}
+
+function splitIntakeBrief(value: string) {
+  const parts = value
+    .split(/\n\n补充：/g)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return {
+    primary: parts[0] || "",
+    supplements: parts.slice(1)
+  };
 }
 
 function simplifyFollowUpPrompt(prompt: string) {
