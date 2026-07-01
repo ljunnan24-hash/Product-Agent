@@ -36,6 +36,8 @@ type LiveRunStageId =
   | "report_composer"
   | "quality_gate";
 
+type LiveRunPhaseId = "read" | "research" | "organize" | "write";
+
 type LiveRunEvent = {
   type?: "progress" | "complete" | "error";
   stage: LiveRunStageId;
@@ -981,13 +983,16 @@ function LiveReasoningPanel({
   isSubmitting: boolean;
   events: LiveRunEvent[];
 }) {
-  const latestByStage = new Map<LiveRunStageId, LiveRunEvent>();
-  for (const event of events) latestByStage.set(event.stage, event);
   const latestEvent =
     [...events].reverse().find((event) => event.status === "failed" || event.status === "running") ??
     events.at(-1);
   const hasStarted = events.length > 0;
   const recentEvents = events.slice(-5);
+  const phaseStates = livePhaseConfig.map((phase) => ({
+    ...phase,
+    status: phaseStatus(phase.id, events, latestEvent, hasStarted, hasMaterials)
+  }));
+  const currentPhase = visiblePhase(latestEvent, hasMaterials, isSubmitting);
   const statusText = visibleRunSummary(latestEvent);
 
   return (
@@ -995,42 +1000,37 @@ function LiveReasoningPanel({
       <div className="live-harness-header">
         <div>
           <span>Agent 正在做什么</span>
-          <strong>
-            {latestEvent?.title ||
-              (isSubmitting ? "启动中" : hasMaterials ? "准备好了" : "等待产品介绍")}
-          </strong>
+          <strong>{currentPhase.title}</strong>
         </div>
-        <small>{isSubmitting ? "正在推进" : "过程可见"}</small>
+        <small>{currentPhase.hint}</small>
       </div>
       <div className="live-current">
         <CircleDashed className={isSubmitting ? "spin" : ""} size={16} />
         <p>{statusText}</p>
       </div>
       <details className="live-details">
-        <summary>查看调研过程</summary>
+        <summary>过程细节</summary>
         <div className="live-stage-list">
-          {liveStageConfig.map((step, index) => {
-            const event = latestByStage.get(step.id);
-            const status = event?.status ?? (hasStarted ? "waiting" : hasMaterials ? "ready" : "waiting");
+          {phaseStates.map((step, index) => {
             const Icon = step.icon;
             return (
-              <div className={`live-stage ${status}`} key={step.id}>
-                <span>{status === "completed" ? <CheckCircle2 size={13} /> : index + 1}</span>
+              <div className={`live-stage ${step.status}`} key={step.id}>
+                <span>{step.status === "completed" ? <CheckCircle2 size={13} /> : index + 1}</span>
                 <Icon size={16} />
                 <div>
                   <strong>{step.title}</strong>
-                  <p>{event?.summary || step.body}</p>
+                  <p>{step.body}</p>
                 </div>
               </div>
             );
           })}
         </div>
         {recentEvents.length ? (
-          <div className="live-event-feed" aria-label="实时事件">
+          <div className="live-event-feed" aria-label="最近动作">
             {recentEvents.map((event, index) => (
               <div className={`live-event ${event.status}`} key={`${event.stage}-${event.status}-${event.at || index}`}>
-                <strong>{event.title}</strong>
-                <p>{event.detail || event.summary}</p>
+                <strong>{visibleEventTitle(event)}</strong>
+                <p>{visibleEventSummary(event)}</p>
               </div>
             ))}
           </div>
@@ -1048,13 +1048,140 @@ function visibleRunSummary(event: LiveRunEvent | undefined) {
   if (event.stage === "material_reader" && event.status === "failed") {
     return "信息还不够，我会先问你补齐关键内容。";
   }
-  if (event.stage === "material_reader") return "我正在先快速读一遍产品介绍。";
-  if (event.stage === "web_research") return "材料够了，我正在调研市场、替代方案和反证。";
-  if (event.stage === "evidence_agent") return "我正在整理支持、反对和不确定的信号。";
-  if (event.stage === "report_composer") return "我正在形成判断和下一步验证建议。";
-  if (event.stage === "quality_gate") return "我正在检查结论是否过度。";
+  if (event.stage === "material_reader") return "我正在读产品、用户、场景和明显缺口。";
+  if (event.stage === "web_research") return "我正在查市场、替代方案和反证。";
+  if (event.stage === "evidence_agent") return "我正在整理支持、反对和不确定信号。";
+  if (event.stage === "report_composer") return "我正在写判断和下一步验证建议。";
+  if (event.stage === "quality_gate") return "我正在检查结论有没有说过头。";
   return event.summary || "我正在处理。";
 }
+
+function visibleEventTitle(event: LiveRunEvent) {
+  if (event.stage === "intake") return "收到介绍";
+  if (event.stage === "material_reader") {
+    if (event.status === "failed") return "需要补问";
+    if (event.status === "completed") return "读完介绍";
+    return "正在读";
+  }
+  if (event.stage === "web_research") {
+    return event.status === "completed" ? "查完外部信号" : "正在查";
+  }
+  if (event.stage === "evidence_agent") return "正在整理";
+  if (event.stage === "report_composer") return "正在写判断";
+  if (event.stage === "quality_gate") {
+    if (event.status === "completed") return "判断完成";
+    if (event.status === "failed") return "遇到问题";
+    return "检查结论";
+  }
+  return event.title;
+}
+
+function visibleEventSummary(event: LiveRunEvent) {
+  if (event.status === "failed" && event.detail) return event.detail;
+  return visibleRunSummary(event);
+}
+
+function visiblePhase(
+  event: LiveRunEvent | undefined,
+  hasMaterials: boolean,
+  isSubmitting: boolean
+) {
+  if (event?.status === "failed") {
+    return {
+      title: event.stage === "material_reader" ? "需要你补一句" : "遇到问题",
+      hint: "等待处理"
+    };
+  }
+  const phase = event ? livePhaseConfig.find((item) => item.id === phaseIdForStage(event.stage)) : null;
+  if (phase) {
+    return {
+      title: phase.runningTitle,
+      hint: isSubmitting ? "正在推进" : "过程可见"
+    };
+  }
+  return {
+    title: isSubmitting ? "准备开始" : hasMaterials ? "准备好了" : "等待产品介绍",
+    hint: hasMaterials ? "过程可见" : "还没有开始"
+  };
+}
+
+function phaseStatus(
+  phaseId: LiveRunPhaseId,
+  events: LiveRunEvent[],
+  latestEvent: LiveRunEvent | undefined,
+  hasStarted: boolean,
+  hasMaterials: boolean
+) {
+  const phaseEvents = events.filter((event) => phaseIdForStage(event.stage) === phaseId);
+  if (phaseEvents.some((event) => event.status === "failed")) return "failed";
+  if (latestEvent && phaseIdForStage(latestEvent.stage) === phaseId && latestEvent.status === "running") {
+    return "running";
+  }
+  if (isPhaseCompleted(phaseId, events)) return "completed";
+  if (!hasStarted && hasMaterials && phaseId === "read") return "ready";
+  return "waiting";
+}
+
+function isPhaseCompleted(phaseId: LiveRunPhaseId, events: LiveRunEvent[]) {
+  const completed = events.some(
+    (event) => phaseIdForStage(event.stage) === phaseId && event.status === "completed"
+  );
+  if (completed) return true;
+
+  const latestPhaseIndex = Math.max(
+    -1,
+    ...events.map((event) => livePhaseIndex(phaseIdForStage(event.stage)))
+  );
+  return latestPhaseIndex > livePhaseIndex(phaseId);
+}
+
+function livePhaseIndex(phaseId: LiveRunPhaseId) {
+  return livePhaseConfig.findIndex((item) => item.id === phaseId);
+}
+
+function phaseIdForStage(stage: LiveRunStageId): LiveRunPhaseId {
+  if (stage === "web_research") return "research";
+  if (stage === "evidence_agent") return "organize";
+  if (stage === "report_composer" || stage === "quality_gate") return "write";
+  return "read";
+}
+
+const livePhaseConfig: Array<{
+  id: LiveRunPhaseId;
+  icon: typeof Paperclip;
+  title: string;
+  runningTitle: string;
+  body: string;
+}> = [
+  {
+    id: "read",
+    icon: Paperclip,
+    title: "读",
+    runningTitle: "正在读",
+    body: "读产品介绍，判断是否需要先补问。"
+  },
+  {
+    id: "research",
+    icon: Search,
+    title: "查",
+    runningTitle: "正在查",
+    body: "查竞品、替代方案、真实痛点和反证。"
+  },
+  {
+    id: "organize",
+    icon: ListChecks,
+    title: "整理",
+    runningTitle: "正在整理",
+    body: "把支持、反对和不确定信号分开。"
+  },
+  {
+    id: "write",
+    icon: Wand2,
+    title: "写判断",
+    runningTitle: "正在写判断",
+    body: "形成结论、风险和下一步验证。"
+  }
+];
 
 const liveStageConfig: Array<{
   id: LiveRunStageId;
