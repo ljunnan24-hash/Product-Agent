@@ -157,8 +157,8 @@ export async function runAnalysisFromFormData(
   await emit({
     stage: "material_reader",
     status: "running",
-    title: "判断是否要补问",
-    summary: "如果关键问题已经能推断出来，我就直接继续调研。"
+    title: "估计信息完整度",
+    summary: "如果有缺口，我会标出来，但不会阻断本次判断。"
   });
 
   const readiness = await assessMaterialReadiness({
@@ -184,18 +184,18 @@ export async function runAnalysisFromFormData(
     }
   });
 
-  if (!readiness.ready) {
+  const intakeAccuracyNote = readiness.ready
+    ? ""
+    : buildIntakeAccuracyNote(readiness.reviewLog.missing);
+
+  if (intakeAccuracyNote) {
     await emit({
       stage: "material_reader",
-      status: "failed",
-      title: "我先补问一下",
-      summary: readiness.summary,
-      detail: readiness.detail
+      status: "completed",
+      title: "带着不确定性继续",
+      summary: "我会先给出判断，同时说明补充哪些信息会更准。",
+      detail: intakeAccuracyNote
     });
-    throw new AnalysisRequestError(
-      readiness.message || "我还需要一点信息再去调研：产品给谁用、解决什么问题、你想重点验证什么。",
-      422
-    );
   }
 
   const preliminaryText = [brief, ...materials.map((item) => item.extractedText || "")]
@@ -409,8 +409,8 @@ export async function runAnalysisFromFormData(
   await emit({
     stage: "report_composer",
     status: "running",
-    title: "生成报告",
-    summary: `${modelName()} 正在基于证据账本写潜力判断。`
+    title: "写判断",
+    summary: `${modelName()} 正在基于证据写产品潜力判断。`
   });
 
   const reportRun = await generateReportWithRuntime({
@@ -428,21 +428,29 @@ export async function runAnalysisFromFormData(
     productName: workflow.inferredProductName,
     imageMetrics
   });
-  const report = reportRun.report;
+  const report = intakeAccuracyNote
+    ? {
+        ...reportRun.report,
+        limitations: uniqueStrings([
+          intakeAccuracyNote,
+          ...reportRun.report.limitations
+        ]).slice(0, 6)
+      }
+    : reportRun.report;
   webResearch = reportRun.webResearch;
 
   await emit({
     stage: "report_composer",
     status: "completed",
-    title: "报告生成完成",
+    title: "判断写完",
     summary: `潜力分 ${report.potential_score}/100，诊断分 ${report.diagnosis_score}/100。`
   });
 
   await emit({
     stage: "quality_gate",
     status: "running",
-    title: "审计报告质量",
-    summary: "检查报告是否空泛、是否误把推断当事实、是否缺下一步实验。"
+    title: "检查结论",
+    summary: "检查结论是否空泛、是否误把推断当事实、是否缺下一步实验。"
   });
 
   const reportEvidenceBindings = buildReportEvidenceBindings({
@@ -493,7 +501,7 @@ export async function runAnalysisFromFormData(
     stage: "quality_gate",
     status: "completed",
     title: "完成",
-    summary: `质量分 ${reportQualityAudit.score}/100，分析记录已保存，正在打开报告。`,
+    summary: `质量分 ${reportQualityAudit.score}/100，分析记录已保存。`,
     id
   });
 
@@ -522,6 +530,19 @@ function parseMetrics(raw: string): ImageMetrics | null {
   }
 
   return null;
+}
+
+function buildIntakeAccuracyNote(missing: string[]) {
+  const needs = missing.length
+    ? missing.slice(0, 3)
+    : ["目标用户", "具体使用场景", "当前替代方案"];
+  return `当前信息仍可先判断，但如果补充「${needs.join("、")}」，结论会更准。`;
+}
+
+function uniqueStrings(values: string[]) {
+  return Array.from(
+    new Set(values.map((value) => value.trim()).filter(Boolean))
+  );
 }
 
 function getFiles(formData: FormData) {

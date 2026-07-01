@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import type { ProductVariantConfig } from "@/lib/variants";
 import type {
+  AnalysisRecord,
   AnalysisRunLog,
   ImageMetrics,
   RunRetryInput,
@@ -80,6 +81,19 @@ type DemoExamplePayload = {
   }>;
 };
 
+type ConversationAnalysisAnswer = {
+  analysisId: string;
+  productName: string;
+  score: number;
+  headline: string;
+  verdict: string;
+  firstImpression: string;
+  signals: string[];
+  risks: string[];
+  nextStep: string;
+  accuracyNote: string;
+};
+
 type Props = {
   variant: ProductVariantConfig;
 };
@@ -108,6 +122,7 @@ export function ChatAgentEntry({ variant }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [runEvents, setRunEvents] = useState<LiveRunEvent[]>([]);
   const [resumedRun, setResumedRun] = useState<ResumedRunState | null>(null);
+  const [analysisAnswer, setAnalysisAnswer] = useState<ConversationAnalysisAnswer | null>(null);
   const [isRestoringRun, setIsRestoringRun] = useState(false);
   const [isLoadingExample, setIsLoadingExample] = useState(false);
 
@@ -206,6 +221,7 @@ export function ChatAgentEntry({ variant }: Props) {
   async function startAnalysis(body: FormData, options?: { isSupplement?: boolean }) {
     setIsSubmitting(true);
     setResumedRun(null);
+    setAnalysisAnswer(null);
     setRunEvents([
       {
         stage: "intake",
@@ -222,7 +238,18 @@ export function ChatAgentEntry({ variant }: Props) {
         setRunEvents((current) => [...current, event].slice(-24));
       });
 
-      router.push(`/analysis/${analysisId}`);
+      const answer = await loadConversationAnalysisAnswer(analysisId);
+      setAnalysisAnswer(answer);
+      setRunEvents((current) => [
+        ...current,
+        {
+          type: "complete" as const,
+          stage: "quality_gate" as const,
+          status: "completed" as const,
+          title: "判断完成",
+          summary: "判断已写在对话里，你可以继续补充，或打开完整记录。"
+        }
+      ].slice(-24));
     } catch (submitError) {
       const message = submitError instanceof Error ? submitError.message : "分析失败";
       if (submitError instanceof StreamAnalysisError && submitError.status === 422) {
@@ -297,6 +324,7 @@ export function ChatAgentEntry({ variant }: Props) {
       setFollowUpPrompt("");
       setSubmittedBrief("");
       setSubmittedMaterialNames([]);
+      setAnalysisAnswer(null);
       setRunEvents([]);
       setResumedRun(null);
     } catch (loadError) {
@@ -310,14 +338,14 @@ export function ChatAgentEntry({ variant }: Props) {
     <main className="chat-agent-layout conversation-mode">
       <section className="product-intake-hero">
         <h1>把产品介绍发给我</h1>
-        <p>我会先读一遍；信息不够会先问你，再去调研和判断。</p>
+        <p>我会先读一遍；信息不完整也会先判断，并告诉你补什么会更准。</p>
       </section>
 
       <form className="chat-console conversation-console" onSubmit={onSubmit}>
         <div className="chat-history conversation-thread" aria-label="Product Agent conversation">
           <Message role="agent">
             <strong>发你现在有的版本就行。</strong>
-            <p>可以是一段话，也可以是你已有的产品材料。信息不够时我会先补问。</p>
+            <p>可以是一段话，也可以是你已有的产品材料。材料少也能先跑，我会在结论里标出不确定性。</p>
             <div className="demo-example-action">
               <button
                 type="button"
@@ -366,11 +394,16 @@ export function ChatAgentEntry({ variant }: Props) {
                   <strong>我先看了一遍，还需要一点信息。</strong>
                   <p>{followUpDisplay}</p>
                 </div>
+              ) : analysisAnswer ? (
+                <ConversationAnalysisAnswerCard
+                  answer={analysisAnswer}
+                  onOpen={() => router.push(`/analysis/${analysisAnswer.analysisId}`)}
+                />
               ) : (
                 <p>
                   {hasSubmittedSupplement
                     ? "收到补充。我会把前后信息放在一起，继续调研替代方案、真实痛点和反证。"
-                    : "收到。我会先读一遍；如果信息够了，就去调研替代方案和证据。"}
+                    : "收到。我会先判断；信息不够也会继续跑，只会告诉你补什么会更准。"}
                 </p>
               )}
               <LiveReasoningPanel
@@ -586,6 +619,7 @@ export function ChatAgentEntry({ variant }: Props) {
     setSubmittedBrief("");
     setSubmittedMaterialNames([]);
     setFollowUpPrompt("");
+    setAnalysisAnswer(null);
     setRunEvents([]);
   }
 }
@@ -616,6 +650,97 @@ function buildSubmissionBody({
   }
 
   return body;
+}
+
+async function loadConversationAnalysisAnswer(analysisId: string) {
+  const response = await fetch(`/api/analyses/${encodeURIComponent(analysisId)}`, {
+    cache: "no-store"
+  });
+  const payload = (await response.json().catch(() => null)) as AnalysisRecord | { error?: string } | null;
+
+  if (!response.ok || !isAnalysisRecord(payload) || !payload.report) {
+    throw new Error("判断完成了，但对话结果读取失败。可以从历史判断里打开完整记录。");
+  }
+
+  return buildConversationAnalysisAnswer(payload);
+}
+
+function isAnalysisRecord(value: AnalysisRecord | { error?: string } | null): value is AnalysisRecord {
+  return Boolean(value && "id" in value && "status" in value && "report" in value);
+}
+
+function buildConversationAnalysisAnswer(record: AnalysisRecord): ConversationAnalysisAnswer {
+  const report = record.report;
+  if (!report) throw new Error("没有可展示的判断结果。");
+
+  const evidenceGap = record.evidenceBrief?.evidenceGaps?.[0]?.missingEvidence;
+  const accuracyNote =
+    report.limitations.find((item) => /补充|不完整|不足|缺|更准/.test(item)) ||
+    (evidenceGap
+      ? `如果补充「${evidenceGap}」，判断会更准。`
+      : "这次判断已经先跑完；后续补充真实用户反馈、付费意愿或竞品替代情况，会让结论更稳。");
+  const recoveryFallback = needsConversationFallback(report);
+  if (recoveryFallback) {
+    return {
+      analysisId: record.id,
+      productName: record.productName || record.evidenceBrief?.productName || "这个产品",
+      score: Math.min(report.potential_score || 0, 35),
+      headline: "信息太少，先给低置信判断：暂时不建议直接投入。",
+      verdict:
+        "我会先把它当作一个很早期的产品想法看：现在只有一个方向词，还看不出目标用户、具体场景和真实痛点，所以分数会偏保守。",
+      firstImpression:
+        "如果这个方向能落到一个高频、刚需、愿意付费的细分任务上，才值得继续查证和验证。",
+      signals: ["方向有空间：AI 工具仍有机会，但机会主要来自具体场景，而不是“AI”这个标签本身。"],
+      risks: [
+        "用户不清：不知道给谁用，就很难判断分发、竞品和付费意愿。",
+        "问题不清：不知道解决什么具体麻烦，容易变成泛泛助手。"
+      ],
+      nextStep: "补一句：给谁用、他们现在怎么解决、最想验证什么。我会基于这句继续给更准的判断。",
+      accuracyNote
+    };
+  }
+
+  return {
+    analysisId: record.id,
+    productName: record.productName || record.evidenceBrief?.productName || "这个产品",
+    score: report.potential_score,
+    headline: report.share_summary.one_line_diagnosis || report.potential_verdict,
+    verdict: report.potential_verdict,
+    firstImpression: report.first_impression,
+    signals: nonEmptyList(
+      report.market_evidence
+        .slice(0, 2)
+        .map((item) => `${item.signal}：${item.interpretation}`),
+      ["还没有足够强的外部信号，当前判断会偏保守。"]
+    ),
+    risks: nonEmptyList(
+      report.top_issues
+        .slice(0, 2)
+        .map((issue) => `${issue.title}：${issue.why_it_matters}`),
+      ["信息还不够具体，目标用户、使用场景和替代方案会显著影响判断。"]
+    ),
+    nextStep:
+      record.evidenceBrief?.recommendedExperiment?.title ||
+      report.actionable_suggestions[0] ||
+      "先做一次低成本用户验证。",
+    accuracyNote
+  };
+}
+
+function needsConversationFallback(report: NonNullable<AnalysisRecord["report"]>) {
+  return /GraphExecutor|graph_blocked|证据链未完成|报告生成被|不能生成正常潜力报告/i.test(
+    [
+      report.share_summary.one_line_diagnosis,
+      report.potential_verdict,
+      report.first_impression,
+      ...report.top_issues.map((issue) => issue.title)
+    ].join("\n")
+  );
+}
+
+function nonEmptyList(items: string[], fallback: string[]) {
+  const values = items.map((item) => item.trim()).filter(Boolean);
+  return values.length ? values : fallback;
 }
 
 function mergeIntakeBrief(previousBrief: string, supplement: string) {
@@ -686,6 +811,50 @@ function Message({ role, children }: { role: "agent" | "user"; children: React.R
     <div className={`chat-message ${role}`}>
       <span className="message-avatar">{role === "agent" ? "A" : "你"}</span>
       <div className="message-bubble">{children}</div>
+    </div>
+  );
+}
+
+function ConversationAnalysisAnswerCard({
+  answer,
+  onOpen
+}: {
+  answer: ConversationAnalysisAnswer;
+  onOpen: () => void;
+}) {
+  return (
+    <div className="conversation-answer">
+      <div className="conversation-answer-head">
+        <span>先给判断</span>
+        <strong>{answer.score}/100</strong>
+      </div>
+      <h2>{answer.headline}</h2>
+      <p>{answer.verdict}</p>
+      <p className="conversation-answer-impression">{answer.firstImpression}</p>
+
+      <div className="conversation-answer-grid">
+        <div>
+          <strong>我看到的信号</strong>
+          {answer.signals.map((signal, index) => (
+            <p key={`${signal}-${index}`}>{signal}</p>
+          ))}
+        </div>
+        <div>
+          <strong>主要风险</strong>
+          {answer.risks.map((risk, index) => (
+            <p key={`${risk}-${index}`}>{risk}</p>
+          ))}
+        </div>
+      </div>
+
+      <div className="conversation-answer-next">
+        <strong>下一步</strong>
+        <p>{answer.nextStep}</p>
+      </div>
+      <p className="conversation-answer-accuracy">{answer.accuracyNote}</p>
+      <button type="button" onClick={onOpen}>
+        打开完整记录
+      </button>
     </div>
   );
 }
@@ -983,8 +1152,13 @@ function LiveReasoningPanel({
   isSubmitting: boolean;
   events: LiveRunEvent[];
 }) {
+  const reversedEvents = [...events].reverse();
+  const completedEvent = reversedEvents.find(
+    (event) => event.type === "complete" || (event.stage === "quality_gate" && event.status === "completed")
+  );
   const latestEvent =
-    [...events].reverse().find((event) => event.status === "failed" || event.status === "running") ??
+    completedEvent ??
+    reversedEvents.find((event) => event.status === "failed" || event.status === "running") ??
     events.at(-1);
   const hasStarted = events.length > 0;
   const recentEvents = events.slice(-5);
@@ -1028,7 +1202,7 @@ function LiveReasoningPanel({
         {recentEvents.length ? (
           <div className="live-event-feed" aria-label="最近动作">
             {recentEvents.map((event, index) => (
-              <div className={`live-event ${event.status}`} key={`${event.stage}-${event.status}-${event.at || index}`}>
+              <div className={`live-event ${event.status}`} key={`${index}-${event.stage}-${event.status}-${event.at || "no-time"}`}>
                 <strong>{visibleEventTitle(event)}</strong>
                 <p>{visibleEventSummary(event)}</p>
               </div>
@@ -1042,7 +1216,10 @@ function LiveReasoningPanel({
 
 function visibleRunSummary(event: LiveRunEvent | undefined) {
   if (!event) {
-    return "我会先读产品介绍，必要时补问，再查证据。";
+    return "我会先读产品介绍，再查证据并给出判断。";
+  }
+  if (event.stage === "quality_gate" && event.status === "completed") {
+    return "判断已完成，你可以继续补充信息，或打开完整记录看细节。";
   }
   if (event.stage === "intake") return "我已收到产品介绍，先快速浏览。";
   if (event.stage === "material_reader" && event.status === "failed") {
@@ -1090,6 +1267,12 @@ function visiblePhase(
     return {
       title: event.stage === "material_reader" ? "需要你补一句" : "遇到问题",
       hint: "等待处理"
+    };
+  }
+  if (event?.stage === "quality_gate" && event.status === "completed") {
+    return {
+      title: "判断完成",
+      hint: "可以继续追问"
     };
   }
   const phase = event ? livePhaseConfig.find((item) => item.id === phaseIdForStage(event.stage)) : null;
@@ -1158,7 +1341,7 @@ const livePhaseConfig: Array<{
     icon: Paperclip,
     title: "读",
     runningTitle: "正在读",
-    body: "读产品介绍，判断是否需要先补问。"
+    body: "读产品介绍，估计哪些信息会影响准确度。"
   },
   {
     id: "research",
