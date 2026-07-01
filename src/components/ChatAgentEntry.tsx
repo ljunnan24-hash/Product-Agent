@@ -115,7 +115,7 @@ export function ChatAgentEntry({ variant }: Props) {
   );
   const composerPlaceholder = isAwaitingSupplement
     ? "补充目标用户、痛点或核心功能。"
-    : "粘贴产品介绍，或补充一句你想判断的问题。";
+    : "粘贴产品介绍。比如：给谁用、解决什么问题、现在做到哪一步。";
   const followUpDisplay = simplifyFollowUpPrompt(followUpPrompt);
 
   useEffect(() => {
@@ -205,8 +205,8 @@ export function ChatAgentEntry({ variant }: Props) {
       {
         stage: "intake",
         status: "running",
-          title: "准备开始",
-          summary: "产品介绍已收到。"
+        title: "开始浏览",
+        summary: "产品介绍已收到，我先快速看一遍。"
       }
     ]);
 
@@ -302,15 +302,15 @@ export function ChatAgentEntry({ variant }: Props) {
   return (
     <main className="chat-agent-layout conversation-mode">
       <section className="product-intake-hero">
-        <h1>上传产品介绍</h1>
-        <p>我来判断这个产品有没有潜力。</p>
+        <h1>把产品介绍发给我</h1>
+        <p>我会先读一遍；信息不够会先问你，再去调研和判断。</p>
       </section>
 
       <form className="chat-console conversation-console" onSubmit={onSubmit}>
         <div className="chat-history conversation-thread" aria-label="Product Agent conversation">
           <Message role="agent">
-            <strong>把产品介绍发给我。</strong>
-            <p>直接粘贴一段介绍，也可以上传材料。</p>
+            <strong>发你现在有的版本就行。</strong>
+            <p>可以是一段话，也可以是你已有的产品材料。信息不够时我会先补问。</p>
             <div className="demo-example-action">
               <button
                 type="button"
@@ -319,7 +319,7 @@ export function ChatAgentEntry({ variant }: Props) {
                 aria-label="载入示例产品介绍"
               >
                 {isLoadingExample ? <Loader2 className="spin" size={16} /> : <Wand2 size={16} />}
-                载入示例
+                看示例
               </button>
             </div>
           </Message>
@@ -348,14 +348,11 @@ export function ChatAgentEntry({ variant }: Props) {
                   <p>{followUpDisplay}</p>
                 </div>
               ) : (
-                <p>收到。我会先读产品介绍，再查证据，最后给潜力判断和下一步。</p>
+                <p>收到。我会先读一遍；如果材料够了，就去调研替代方案和证据。</p>
               )}
               <LiveReasoningPanel
                 hasMaterials={Boolean(submittedBrief || submittedMaterialNames.length)}
                 isSubmitting={isSubmitting}
-                hasTextMaterial={
-                  Boolean(submittedBrief) || materials.some((material) => isTextFile(material.file))
-                }
                 events={runEvents}
               />
             </Message>
@@ -382,7 +379,7 @@ export function ChatAgentEntry({ variant }: Props) {
                         type="button"
                         onClick={() => router.push(`/analysis/${resumedRun.analysisId}`)}
                       >
-                        打开报告
+                        打开判断
                       </button>
                     ) : null}
                     {resumedRun.status === "failed" && resumedRun.retryInput ? (
@@ -425,7 +422,6 @@ export function ChatAgentEntry({ variant }: Props) {
                 <LiveReasoningPanel
                   hasMaterials
                   isSubmitting={resumedRun.status === "running"}
-                  hasTextMaterial
                   events={runEvents}
                 />
               </div>
@@ -436,7 +432,7 @@ export function ChatAgentEntry({ variant }: Props) {
         <div className="composer-box">
           {isAwaitingSupplement ? (
             <p className="composer-follow-up-hint">
-              补充内容会和上一轮产品介绍一起分析。
+              我会把补充内容和上一轮产品介绍放在一起判断。
             </p>
           ) : null}
           {materials.length > 0 ? (
@@ -492,7 +488,7 @@ export function ChatAgentEntry({ variant }: Props) {
               aria-label="上传产品介绍文件"
             >
               <Paperclip size={17} />
-              上传产品介绍
+              附上材料
             </button>
 
             <div className="composer-spacer" />
@@ -648,12 +644,12 @@ function isTextFile(file: File) {
 
 function fileKindLabel(file: File) {
   const name = file.name.toLowerCase();
-  if (file.type === "application/pdf") return "PDF";
+  if (file.type === "application/pdf") return "文档";
   if (name.endsWith(".md") || name.endsWith(".mdx") || name === "readme") {
-    return "MD";
+    return "文档";
   }
-  if (isTextFile(file)) return "TXT";
-  return "IMG";
+  if (isTextFile(file)) return "文档";
+  return "图片";
 }
 
 function Message({ role, children }: { role: "agent" | "user"; children: React.ReactNode }) {
@@ -735,7 +731,7 @@ async function runStreamingAnalysis(
     }
   }
 
-  if (!analysisId) throw new Error("分析已结束，但没有返回报告 ID。");
+  if (!analysisId) throw new Error("分析已结束，但没有返回结果 ID。");
   return analysisId;
 }
 
@@ -795,8 +791,8 @@ function liveEventsFromRun(run: AnalysisRunLog): LiveRunEvent[] {
       type: "complete",
       stage: "quality_gate",
       status: "completed",
-      title: "分析完成",
-      summary: "报告已生成，可以打开查看。",
+      title: "判断完成",
+      summary: "结果已生成，可以打开查看。",
       id: run.analysisId,
       runId: run.id,
       at: run.updatedAt
@@ -824,8 +820,8 @@ function liveEventFromStoredRunEvent(event: StoredRunEvent): LiveRunEvent | null
       type: "complete",
       stage: "quality_gate",
       status: "completed",
-      title: "分析完成",
-      summary: "报告已生成，可以打开查看。",
+      title: "判断完成",
+      summary: "结果已生成，可以打开查看。",
       id: event.analysisId || event.id,
       runId: event.runId,
       at: event.at
@@ -952,12 +948,10 @@ function formatRunTime(value: string) {
 function LiveReasoningPanel({
   hasMaterials,
   isSubmitting,
-  hasTextMaterial,
   events
 }: {
   hasMaterials: boolean;
   isSubmitting: boolean;
-  hasTextMaterial: boolean;
   events: LiveRunEvent[];
 }) {
   const latestByStage = new Map<LiveRunStageId, LiveRunEvent>();
@@ -967,26 +961,26 @@ function LiveReasoningPanel({
     events.at(-1);
   const hasStarted = events.length > 0;
   const recentEvents = events.slice(-5);
-  const statusText = visibleRunSummary(latestEvent, hasTextMaterial);
+  const statusText = visibleRunSummary(latestEvent);
 
   return (
-    <section className={`live-harness compact ${isSubmitting ? "active" : ""}`} aria-label="分析状态">
+    <section className={`live-harness compact ${isSubmitting ? "active" : ""}`} aria-label="Agent 工作过程">
       <div className="live-harness-header">
         <div>
-          <span>分析状态</span>
+          <span>Agent 正在做什么</span>
           <strong>
             {latestEvent?.title ||
               (isSubmitting ? "启动中" : hasMaterials ? "准备好了" : "等待产品介绍")}
           </strong>
         </div>
-        <small>{isSubmitting ? "正在处理" : "可查看过程"}</small>
+        <small>{isSubmitting ? "正在推进" : "过程可见"}</small>
       </div>
       <div className="live-current">
         <CircleDashed className={isSubmitting ? "spin" : ""} size={16} />
         <p>{statusText}</p>
       </div>
       <details className="live-details">
-        <summary>查看过程</summary>
+        <summary>查看调研过程</summary>
         <div className="live-stage-list">
           {liveStageConfig.map((step, index) => {
             const event = latestByStage.get(step.id);
@@ -1019,19 +1013,19 @@ function LiveReasoningPanel({
   );
 }
 
-function visibleRunSummary(event: LiveRunEvent | undefined, hasTextMaterial: boolean) {
+function visibleRunSummary(event: LiveRunEvent | undefined) {
   if (!event) {
-    return hasTextMaterial ? "我会先读产品介绍，再查证据。" : "我会先读产品介绍，再查证据。";
+    return "我会先读产品介绍，必要时补问，再查证据。";
   }
-  if (event.stage === "intake") return "我已收到产品介绍。";
+  if (event.stage === "intake") return "我已收到产品介绍，先快速浏览。";
   if (event.stage === "material_reader" && event.status === "failed") {
     return "信息还不够，我会先问你补齐关键内容。";
   }
   if (event.stage === "material_reader") return "我正在先快速读一遍产品介绍。";
-  if (event.stage === "web_research") return "材料够了，我正在查公开证据。";
-  if (event.stage === "evidence_agent") return "我正在整理支持证据和风险。";
-  if (event.stage === "report_composer") return "我正在写潜力判断。";
-  if (event.stage === "quality_gate") return "我正在做最后检查。";
+  if (event.stage === "web_research") return "材料够了，我正在调研市场、替代方案和反证。";
+  if (event.stage === "evidence_agent") return "我正在整理支持、反对和不确定的信号。";
+  if (event.stage === "report_composer") return "我正在形成判断和下一步验证建议。";
+  if (event.stage === "quality_gate") return "我正在检查结论是否过度。";
   return event.summary || "我正在处理。";
 }
 
@@ -1044,38 +1038,38 @@ const liveStageConfig: Array<{
   {
     id: "intake",
     icon: Paperclip,
-    title: "接收",
-    body: "检查产品介绍是否可读取。"
+    title: "收到产品介绍",
+    body: "先确认我能读懂你给的信息。"
   },
   {
     id: "material_reader",
     icon: FileImage,
-    title: "读介绍",
-    body: "理解产品、用户和当前问题。"
+    title: "快速浏览",
+    body: "理解产品、用户、场景和当前缺口。"
   },
   {
     id: "web_research",
     icon: Search,
-    title: "查证据",
-    body: "规划查询，搜索公开网页和反证。"
+    title: "外部调研",
+    body: "搜索竞品、替代方案、痛点和反证。"
   },
   {
     id: "evidence_agent",
     icon: ListChecks,
-    title: "建账本",
-    body: "整理支持证据和风险。"
+    title: "整理证据",
+    body: "区分支持、反对和不确定信号。"
   },
   {
     id: "report_composer",
     icon: Wand2,
-    title: "写报告",
-    body: "基于证据账本生成潜力判断。"
+    title: "形成判断",
+    body: "给出是否继续、为什么和下一步。"
   },
   {
     id: "quality_gate",
     icon: TrendingUp,
-    title: "收尾",
-    body: "保存记录并打开报告。"
+    title: "检查结论",
+    body: "避免把证据不足的地方说得太满。"
   }
 ];
 

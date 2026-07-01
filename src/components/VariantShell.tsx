@@ -14,12 +14,9 @@ export function VariantShell({ variant }: Props) {
           Product Agent
         </Link>
         <div className="topbar-actions">
-          <span className="topbar-status">上传产品介绍</span>
-          <Link className="secondary-link" href="/backtests">
-            回测
-          </Link>
+          <span className="topbar-status">产品验证 Agent</span>
           <Link className="secondary-link" href="/analyses">
-            报告库
+            历史判断
           </Link>
         </div>
       </header>
