@@ -125,8 +125,8 @@ export async function runAnalysisFromFormData(
   await emit({
     stage: "intake",
     status: "running",
-    title: "接收材料",
-    summary: "检查文件类型、数量和大小。"
+    title: "收到产品介绍",
+    summary: "我先确认能读懂你给的信息。"
   });
 
   const productVariant = getVariant(value(formData, "product_variant"))
@@ -150,16 +150,18 @@ export async function runAnalysisFromFormData(
   await emit({
     stage: "intake",
     status: "completed",
-    title: "材料就绪",
-    summary: `${files.length} 份材料通过检查。`,
+    title: "产品介绍已收到",
+    summary: files.length
+      ? `我会一起看你粘贴的内容和 ${files.length} 个附件。`
+      : "我会先按你粘贴的内容快速浏览。",
     id
   });
 
   await emit({
     stage: "material_reader",
     status: "running",
-    title: "读取材料",
-    summary: "抽取 README、PDF、TXT 和图片基础信息。"
+    title: "快速浏览",
+    summary: "先提取产品、用户、场景和明显缺口。"
   });
 
   const materialRead = await readMaterialsWithRuntime({
@@ -175,8 +177,8 @@ export async function runAnalysisFromFormData(
   await emit({
     stage: "material_reader",
     status: "running",
-    title: "快速浏览材料",
-    summary: "先判断信息是否足够开始深入调研。"
+    title: "判断是否要补问",
+    summary: "如果关键问题已经能推断出来，我就直接继续调研。"
   });
 
   const readiness = await assessMaterialReadiness({
@@ -193,8 +195,8 @@ export async function runAnalysisFromFormData(
   await emit({
     stage: "material_reader",
     status: "completed",
-    title: "材料读完",
-    summary: `完成 ${materials.length} 份材料，抽取 ${extractedUrlCount} 个公开链接。`,
+    title: "快速浏览完成",
+    summary: buildMaterialReadSummary({ brief, materialCount: materials.length, extractedUrlCount }),
     detail: [readiness.summary, githubWarnings.join("；")].filter(Boolean).join("；") || undefined,
     metadata: {
       intakeReview: readiness.reviewLog
@@ -205,11 +207,14 @@ export async function runAnalysisFromFormData(
     await emit({
       stage: "material_reader",
       status: "failed",
-      title: "需要补充产品介绍",
+      title: "我先补问一下",
       summary: readiness.summary,
       detail: readiness.detail
     });
-    throw new AnalysisRequestError(readiness.message || "请补充产品介绍后再开始分析。", 422);
+    throw new AnalysisRequestError(
+      readiness.message || "我还需要一点信息再去调研：产品给谁用、解决什么问题、你想重点验证什么。",
+      422
+    );
   }
 
   const preliminaryText = [brief, ...materials.map((item) => item.extractedText || "")]
@@ -220,8 +225,8 @@ export async function runAnalysisFromFormData(
   await emit({
     stage: "web_research",
     status: "running",
-    title: "查证据",
-    summary: "按痛点、付费、替代方案、分发和反证规划搜索。"
+    title: "外部调研",
+    summary: "搜索竞品、替代方案、真实痛点和反证。"
   });
 
   let webResearch = await collectWebResearch({
@@ -236,10 +241,10 @@ export async function runAnalysisFromFormData(
   await emit({
     stage: "web_research",
     status: "completed",
-    title: "证据检索完成",
-    summary: `执行 ${webResearch.queryExecutions?.length ?? 0} 条查询，得到 ${
-      webResearch.searchResults.length
-    } 条搜索结果，GitHub 指标 ${githubEvidence.length} 条。`,
+    title: "外部调研完成",
+    summary: `完成 ${webResearch.queryExecutions?.length ?? 0} 轮检索，记录 ${
+      webResearch.searchResults.length + githubEvidence.length
+    } 条外部线索。`,
     detail: webResearch.searchProvider
       ? `搜索来源：${webResearch.searchProvider}`
       : undefined
@@ -248,8 +253,8 @@ export async function runAnalysisFromFormData(
   await emit({
     stage: "evidence_agent",
     status: "running",
-    title: "建立证据账本",
-    summary: "把材料和网页结果归一成证据卡，检查支持证据和反证缺口。"
+    title: "整理证据",
+    summary: "区分支持、反对和仍不确定的信号。"
   });
 
   let workflow = runDeterministicAgentWorkflow({
@@ -597,19 +602,16 @@ async function assessMaterialReadiness({
         ? modelReview.missing.slice(0, 3)
         : missing.slice(0, 3);
       const issue =
-        modelReview.summary || "我先浏览了一遍，还需要补充一点关键信息。";
+        modelReview.summary || "我先浏览了一遍，还需要确认几个关键点。";
       const question =
-        modelReview.question ||
-        (needs.length
-          ? `请补充：${needs.join("、")}。`
-          : "请补充产品是什么、给谁用、解决什么问题。");
+        modelReview.question || buildPartnerFollowUpQuestion(needs);
       const message = `${issue} ${question}`;
 
       return {
         ready: false,
         summary: issue,
         detail: [
-          needs.length ? `建议补充：${needs.join("、")}。` : question,
+          needs.length ? `我想先确认：${needs.join("、")}。` : question,
           githubWarnings.length ? `读取提示：${githubWarnings.join("；")}` : ""
         ]
           .filter(Boolean)
@@ -639,12 +641,12 @@ async function assessMaterialReadiness({
   ) {
     return {
       ready: true,
-      summary: "材料已经够我先判断基本假设，开始深入调研。",
+      summary: "产品、用户和问题已经基本能推断出来，我继续做外部调研。",
       reviewLog: {
         source: "fallback",
         ready: true,
         missing: missing.slice(0, 3),
-        summary: "材料已经够我先判断基本假设，开始深入调研。",
+        summary: "产品、用户和问题已经基本能推断出来，我继续做外部调研。",
         reason: "模型 intake review 不可用，使用本地兜底规则。",
         textCharCount: charCount,
         materialCount: materials.length,
@@ -655,18 +657,19 @@ async function assessMaterialReadiness({
 
   const needs = missing.length
     ? missing.slice(0, 3)
-    : ["产品是什么", "给谁用", "解决什么问题"];
+    : ["产品做什么", "给谁用", "解决什么具体问题"];
   const issue =
     charCount < minimumFirstPassChars
-      ? "我先浏览了一遍，当前信息还太短，容易分析成泛泛建议。"
-      : "我先浏览了一遍，还缺少开始深入调研的关键信息。";
-  const message = `${issue} 请补充：${needs.join("、")}。有这些后我再继续判断产品潜力。`;
+      ? "我先看了一遍，现在还像一句产品想法，直接调研会太泛。"
+      : "我先看了一遍，还需要确认几个关键点再去调研。";
+  const question = buildPartnerFollowUpQuestion(needs);
+  const message = `${issue} ${question}`;
 
   return {
     ready: false,
     summary: issue,
     detail: [
-      `建议补充：${needs.join("、")}。`,
+      `我想先确认：${needs.join("、")}。`,
       githubWarnings.length ? `读取提示：${githubWarnings.join("；")}` : ""
     ]
       .filter(Boolean)
@@ -676,7 +679,7 @@ async function assessMaterialReadiness({
       source: "fallback",
       ready: false,
       missing: needs,
-      question: `请补充：${needs.join("、")}。`,
+      question,
       summary: issue,
       reason: "模型 intake review 不可用或输入明显过短，使用本地兜底规则。",
       textCharCount: charCount,
@@ -693,20 +696,45 @@ function normalizeReadinessText(text: string) {
     .trim();
 }
 
+function buildMaterialReadSummary({
+  brief,
+  materialCount,
+  extractedUrlCount
+}: {
+  brief: string;
+  materialCount: number;
+  extractedUrlCount: number;
+}) {
+  const inputs = [
+    brief.trim() ? "产品介绍" : "",
+    materialCount ? `${materialCount} 个附件` : ""
+  ].filter(Boolean);
+  const base = inputs.length ? `已浏览${inputs.join("和")}` : "已浏览当前输入";
+  const sourceHint = extractedUrlCount
+    ? `，发现 ${extractedUrlCount} 个公开来源线索`
+    : "";
+  return `${base}${sourceHint}。`;
+}
+
+function buildPartnerFollowUpQuestion(needs: string[]) {
+  const items = needs.length ? needs : ["产品做什么", "给谁用", "解决什么具体问题"];
+  return `我先确认一下：${items.join("、")}。你可以用几句话回答，不需要整理成文档。`;
+}
+
 function missingMaterialBasics(text: string) {
   const checks = [
     {
-      label: "产品是什么/核心功能",
+      label: "产品做什么",
       pattern:
         /产品|工具|平台|应用|软件|服务|插件|agent|app|tool|platform|software|service|extension|feature|workflow|solution|解决方案|功能/i
     },
     {
-      label: "目标用户是谁",
+      label: "给谁用",
       pattern:
         /用户|客户|团队|创始人|开发者|设计师|运营|销售|学生|老师|企业|公司|人群|面向|适合|target|user|customer|persona|team|founder|developer|designer|operator|sales|student|teacher|enterprise|company|ICP/i
     },
     {
-      label: "解决什么问题/痛点",
+      label: "解决什么具体问题",
       pattern:
         /问题|痛点|需求|场景|任务|成本|效率|麻烦|困难|风险|pain|problem|need|job|use case|workflow|cost|efficient|risk|manual|slow/i
     }
@@ -842,7 +870,7 @@ async function readMaterialsWithRuntime({
         await emit({
           stage: "material_reader",
           status: "running",
-          title: "读取材料",
+          title: "读取附件",
           summary: `正在处理 ${file.name || `material-${index + 1}`}。`
         });
 

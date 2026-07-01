@@ -604,12 +604,7 @@ function mergeIntakeBrief(previousBrief: string, supplement: string) {
 }
 
 function simplifyFollowUpPrompt(prompt: string) {
-  const text = prompt.replace(/\s+/g, " ").trim();
-  const supplement = text.match(/请补充[:：]\s*([^。]+)。?/);
-  if (supplement?.[1]) {
-    return `请补充：${supplement[1]}。`;
-  }
-  return text;
+  return prompt.replace(/\s+/g, " ").trim();
 }
 
 function shouldRestoreRun(run: AnalysisRunLog) {

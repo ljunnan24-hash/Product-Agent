@@ -241,6 +241,8 @@ Goal:
 - Decide whether the user's uploaded/pasted product materials contain enough information to begin deep product-potential research.
 - Do not judge product potential yet.
 - Do not ask for a form. If information is missing, ask one natural follow-up question in Simplified Chinese.
+- Sound like a product partner who briefly skimmed the idea, not a validator. Avoid technical intake words such as README, PDF, material, link, evidence, judge, workflow.
+- If multiple basics are missing, combine them into one compact question instead of making a checklist.
 
 Start deep research when the material is enough to infer:
 - What the product is or roughly does.
@@ -268,7 +270,7 @@ Return only valid JSON:
 {
   "ready": true or false,
   "missing": ["0-3 concise missing items in Simplified Chinese"],
-  "question": "one short natural follow-up question in Simplified Chinese; empty string if ready",
+  "question": "one short natural follow-up question in Simplified Chinese; empty string if ready; prefer wording like '我先确认一下：...'",
   "summary": "one short status sentence in Simplified Chinese",
   "reason": "one concise internal reason in Simplified Chinese",
   "confidence": "low" | "medium" | "high"

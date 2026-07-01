@@ -56,8 +56,8 @@ export async function POST(request: Request) {
           type: "progress",
           stage: "intake",
           status: "running",
-          title: "启动分析",
-          summary: "正在建立本次运行。",
+          title: "开始浏览",
+          summary: "我先快速看一遍产品介绍。",
           at: new Date().toISOString()
         });
 
@@ -115,16 +115,16 @@ function buildRetryInput(formData: FormData): RunRetryInput {
     limitation: canAutoPrefill
       ? undefined
       : materialNames.length
-        ? "浏览器不会在刷新后保留本地文件，需要重新选择这些材料后再跑。"
-        : "没有可自动带回的 GitHub URL，请重新补充材料或链接。"
+        ? "浏览器不会在刷新后保留本地文件，需要重新选择这些附件后再跑。"
+        : "上次输入无法自动带回，请重新粘贴产品介绍或重新附上文件。"
   };
 }
 
 function summarizeRetryInput(retryInput: RunRetryInput) {
   const pieces = [
-    retryInput.githubRepoUrl ? `GitHub: ${retryInput.githubRepoUrl}` : "",
-    retryInput.materialNames.length ? `文件: ${retryInput.materialNames.join(", ")}` : "",
-    retryInput.brief ? `补充: ${retryInput.brief}` : ""
+    retryInput.githubRepoUrl ? `来源: ${retryInput.githubRepoUrl}` : "",
+    retryInput.materialNames.length ? `附件: ${retryInput.materialNames.join(", ")}` : "",
+    retryInput.brief ? `产品介绍: ${retryInput.brief}` : ""
   ].filter(Boolean);
   return trimForLog(pieces.join("；") || "未捕获输入。", 420);
 }
